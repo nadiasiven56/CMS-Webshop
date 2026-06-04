@@ -1,0 +1,44 @@
+# Webshop-CRM — lokale dev-stack (Postgres 16 + Redis 7)
+# Start: pnpm db:up   (of: docker compose -f docker-compose.dev.yml up -d)
+# Logs:  pnpm db:logs
+# Stop:  pnpm db:down
+# Reset (drop data!): pnpm db:reset
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: webshop-crm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: webshop
+      POSTGRES_PASSWORD: webshop
+      POSTGRES_DB: webshop_crm
+      # Locale voor correcte sortering (Nederlandse strings)
+      LANG: en_US.utf8
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ./.docker-data/postgres:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U webshop -d webshop_crm"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: webshop-crm-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - ./.docker-data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

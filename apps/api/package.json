@@ -1,0 +1,45 @@
+{
+  "name": "@webshop-crm/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "echo 'lint: configure ESLint in Fase 2' && exit 0",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:studio": "drizzle-kit studio",
+    "seed": "tsx src/db/seed.ts",
+    "seed:demo": "tsx src/db/seed-products.ts",
+    "seed:demo-shops": "tsx src/db/seed-demo-shops.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "1.13.7",
+    "@hono/zod-validator": "0.4.1",
+    "@webshop-crm/shared": "workspace:*",
+    "argon2": "0.41.1",
+    "bcryptjs": "2.4.3",
+    "dotenv": "16.4.5",
+    "drizzle-orm": "0.36.4",
+    "hono": "4.6.12",
+    "lucia": "3.2.2",
+    "pino": "9.5.0",
+    "postgres": "3.4.5",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "2.4.6",
+    "@types/node": "22.9.0",
+    "drizzle-kit": "0.28.1",
+    "pino-pretty": "13.0.0",
+    "tsx": "4.19.2",
+    "typescript": "5.6.3",
+    "vitest": "2.1.5"
+  }
+}

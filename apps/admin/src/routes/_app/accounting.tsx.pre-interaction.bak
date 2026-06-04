@@ -1,0 +1,139 @@
+import { createFileRoute, Link } from '@tanstack/react-router';
+import { ChevronLeft, CheckCircle2, AlertTriangle, Circle, Download, RefreshCcw, FileBox } from 'lucide-react';
+import { MOCK_ACCOUNTING_CONNECTIONS, MOCK_ACCOUNTING_EXPORTS } from '@/lib/mock-data-extended';
+import { formatRelative, formatDateTime } from '@/lib/format';
+
+export const Route = createFileRoute('/_app/accounting')({
+  component: AccountingPage,
+});
+
+const TYPE_LABELS: Record<string, string> = {
+  invoice: 'Factuur-batch',
+  ledger: 'Grootboek',
+  oss: 'OSS aangifte',
+  icp: 'ICP aangifte',
+  'ubl-batch': 'UBL bestanden',
+};
+
+function AccountingPage() {
+  return (
+    <div>
+      <div style={{ marginBottom: 8 }}>
+        <Link to="/finance" className="btn btn-ghost btn-sm" style={{ paddingLeft: 6 }}>
+          <ChevronLeft size={14} />
+          Terug naar Financieel
+        </Link>
+      </div>
+
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Boekhouding</h1>
+          <p className="page-subtitle">Koppelingen met externe boekhoud-systemen en handmatige exports.</p>
+        </div>
+      </div>
+
+      {/* Connections cards */}
+      <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--theme-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 12px' }}>
+        Koppelingen
+      </h2>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14, marginBottom: 28 }}>
+        {MOCK_ACCOUNTING_CONNECTIONS.map((c) => (
+          <div key={c.id} className="card">
+            <div className="card-header" style={{ alignItems: 'flex-start' }}>
+              <div>
+                <h3 className="card-title">{c.name}</h3>
+                <ConnStatusBadge status={c.status} />
+              </div>
+              <ConnIcon status={c.status} />
+            </div>
+            <p style={{ fontSize: 12.5, color: 'var(--theme-muted)', marginBottom: 12, lineHeight: 1.5 }}>
+              {c.description}
+            </p>
+            {c.lastSync && (
+              <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 10 }}>
+                Laatste sync: {formatRelative(c.lastSync)}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 6 }}>
+              {c.status === 'not-connected' ? (
+                <button type="button" className="btn btn-primary btn-sm" style={{ flex: 1 }}>Koppelen</button>
+              ) : c.alwaysOn ? (
+                <button type="button" className="btn btn-secondary btn-sm" style={{ flex: 1 }}>
+                  <Download size={13} /> Download
+                </button>
+              ) : (
+                <>
+                  <button type="button" className="btn btn-secondary btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
+                    <RefreshCcw size={13} /> Sync nu
+                  </button>
+                  <button type="button" className="btn btn-ghost btn-sm">⋯</button>
+                </>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Recent exports */}
+      <div className="card card-flush">
+        <div style={{
+          padding: '16px 20px', borderBottom: '1px solid var(--border-default)',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8,
+        }}>
+          <div>
+            <h2 className="card-title"><FileBox size={14} style={{ display: 'inline', verticalAlign: -2 }} /> Recente exports</h2>
+            <p className="card-subtitle">Laatste 30 dagen — automatische runs en handmatige exports.</p>
+          </div>
+          <button type="button" className="btn btn-primary btn-sm">
+            <Download size={13} /> Export now
+          </button>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Periode</th>
+                <th>Status</th>
+                <th style={{ textAlign: 'right' }}>Records</th>
+                <th>Externe ref</th>
+                <th>Datum</th>
+              </tr>
+            </thead>
+            <tbody>
+              {MOCK_ACCOUNTING_EXPORTS.map((e) => (
+                <tr key={e.id}>
+                  <td>{TYPE_LABELS[e.type] ?? e.type}</td>
+                  <td>{e.period}</td>
+                  <td>
+                    {e.status === 'success' && <span className="badge badge-success">Succesvol</span>}
+                    {e.status === 'failed' && <span className="badge badge-danger">Mislukt</span>}
+                    {e.status === 'pending' && <span className="badge badge-warning">Bezig</span>}
+                  </td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{e.recordCount > 0 ? e.recordCount : '—'}</td>
+                  <td className="mono" style={{ fontSize: 11.5, color: 'var(--theme-muted)' }}>{e.externalRef ?? '—'}</td>
+                  <td style={{ fontSize: 12.5, color: 'var(--theme-muted)' }}>{formatDateTime(e.createdAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConnStatusBadge({ status }: { status: 'connected' | 'sandbox' | 'not-connected' | 'error' }) {
+  if (status === 'connected') return <span className="badge badge-success">Verbonden</span>;
+  if (status === 'sandbox') return <span className="badge badge-warning">Sandbox</span>;
+  if (status === 'not-connected') return <span className="badge badge-neutral">Niet gekoppeld</span>;
+  return <span className="badge badge-danger">Fout</span>;
+}
+
+function ConnIcon({ status }: { status: 'connected' | 'sandbox' | 'not-connected' | 'error' }) {
+  if (status === 'connected' || status === 'sandbox') {
+    return <CheckCircle2 size={20} style={{ color: status === 'connected' ? 'var(--success)' : 'var(--warning)' }} />;
+  }
+  if (status === 'error') return <AlertTriangle size={20} style={{ color: 'var(--danger)' }} />;
+  return <Circle size={20} style={{ color: 'var(--theme-muted)' }} />;
+}

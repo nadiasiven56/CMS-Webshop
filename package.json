@@ -1,0 +1,35 @@
+{
+  "name": "webshop-crm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Custom multi-shop CRM/ERP-platform — single source of truth voor catalogus, voorraad, orders, klanten en financien.",
+  "packageManager": "pnpm@9.12.3",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "db:up": "docker compose -f docker-compose.dev.yml up -d",
+    "db:down": "docker compose -f docker-compose.dev.yml down",
+    "db:logs": "docker compose -f docker-compose.dev.yml logs -f",
+    "db:reset": "docker compose -f docker-compose.dev.yml down -v",
+    "db:migrate": "pnpm --filter @webshop-crm/api db:migrate",
+    "db:generate": "pnpm --filter @webshop-crm/api db:generate",
+    "db:seed": "pnpm --filter @webshop-crm/api seed",
+    "db:seed-demo": "pnpm --filter @webshop-crm/api seed:demo",
+    "db:seed-demo-shops": "pnpm --filter @webshop-crm/api seed:demo-shops",
+    "test:e2e": "pnpm --filter @webshop-crm/admin test:e2e"
+  },
+  "devDependencies": {
+    "@types/node": "22.9.0",
+    "typescript": "5.6.3"
+  },
+  "dependencies": {
+    "embedded-postgres": "18.3.0-beta.17"
+  }
+}

@@ -1,0 +1,196 @@
+import { createFileRoute } from '@tanstack/react-router';
+import { useMemo, useState } from 'react';
+import { Search, Undo2, RefreshCcw, AlertCircle, Euro } from 'lucide-react';
+import { MOCK_RETURNS, type ReturnReason, type ReturnStatus } from '@/lib/mock-data-extended';
+import { formatMoney, formatDate, formatRelative } from '@/lib/format';
+
+export const Route = createFileRoute('/_app/returns')({
+  component: ReturnsPage,
+});
+
+const STATUS_TABS: Array<{ value: ReturnStatus | 'all'; label: string }> = [
+  { value: 'all', label: 'Alle' },
+  { value: 'requested', label: 'Aangevraagd' },
+  { value: 'approved', label: 'Goedgekeurd' },
+  { value: 'received', label: 'Ontvangen' },
+  { value: 'refunded', label: 'Terugbetaald' },
+  { value: 'rejected', label: 'Afgewezen' },
+];
+
+const REASON_LABELS: Record<ReturnReason, { label: string; klass: string }> = {
+  'niet-passend': { label: 'Niet passend', klass: 'badge-info' },
+  'defect': { label: 'Defect', klass: 'badge-danger' },
+  'verkeerd-product': { label: 'Verkeerd product', klass: 'badge-warning' },
+  'overig': { label: 'Overig', klass: 'badge-neutral' },
+};
+
+const STATUS_LABELS: Record<ReturnStatus, { label: string; klass: string }> = {
+  requested: { label: 'Aangevraagd', klass: 'badge-info' },
+  approved: { label: 'Goedgekeurd', klass: 'badge-warning' },
+  received: { label: 'Ontvangen', klass: 'badge-accent' },
+  refunded: { label: 'Terugbetaald', klass: 'badge-success' },
+  rejected: { label: 'Afgewezen', klass: 'badge-danger' },
+};
+
+function ReturnsPage() {
+  const [search, setSearch] = useState('');
+  const [statusTab, setStatusTab] = useState<ReturnStatus | 'all'>('all');
+  const [reasonFilter, setReasonFilter] = useState<Set<ReturnReason>>(new Set());
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return MOCK_RETURNS.filter((r) => {
+      if (statusTab !== 'all' && r.status !== statusTab) return false;
+      if (reasonFilter.size > 0 && !reasonFilter.has(r.reason)) return false;
+      if (q) {
+        const hay = `${r.rmaNumber} ${r.orderNumber} ${r.customerName}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [search, statusTab, reasonFilter]);
+
+  const counts: Record<string, number> = { all: MOCK_RETURNS.length };
+  for (const r of MOCK_RETURNS) counts[r.status] = (counts[r.status] ?? 0) + 1;
+
+  const openCount = MOCK_RETURNS.filter((r) => ['requested', 'approved', 'received'].includes(r.status)).length;
+  const refundedThisMonth = MOCK_RETURNS.filter((r) => {
+    if (r.status !== 'refunded' || !r.closedAt) return false;
+    const d = new Date(r.closedAt);
+    const now = new Date();
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  });
+  const totalRefund = MOCK_RETURNS.reduce((s, r) => s + r.refundAmount, 0);
+  const returnRate = (MOCK_RETURNS.length / 318) * 100; // vs orders count proxy
+
+  function toggleReason(r: ReturnReason) {
+    setReasonFilter((prev) => {
+      const n = new Set(prev);
+      if (n.has(r)) n.delete(r);
+      else n.add(r);
+      return n;
+    });
+  }
+
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <div className="page-title-row">
+            <h1 className="page-title">Retouren</h1>
+            <span className="count-badge">{MOCK_RETURNS.length}</span>
+          </div>
+          <p className="page-subtitle">RMA-aanvragen, ontvangsten en refunds.</p>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 20 }}>
+        <SimpleKpi icon={<AlertCircle size={16} />} label="Open retouren" value={String(openCount)} accent="warning" />
+        <SimpleKpi icon={<RefreshCcw size={16} />} label="Verwerkt deze maand" value={String(refundedThisMonth.length)} accent="success" />
+        <SimpleKpi icon={<Undo2 size={16} />} label="Retour-percentage" value={`${returnRate.toFixed(1)}%`} accent="info" />
+        <SimpleKpi icon={<Euro size={16} />} label="Refund-totaal" value={formatMoney(totalRefund, { decimals: false })} accent="accent" />
+      </div>
+
+      <div className="toolbar" style={{ marginBottom: 12 }}>
+        <div className="search-input">
+          <Search size={14} />
+          <input
+            placeholder="Zoek op RMA, order-nr of klant…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="segmented">
+          {STATUS_TABS.map((t) => (
+            <button key={t.value} type="button" data-active={statusTab === t.value} onClick={() => setStatusTab(t.value)}>
+              {t.label}
+              <span className="seg-count">{counts[t.value] ?? 0}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="toolbar" style={{ marginBottom: 16, gap: 6 }}>
+        <span style={{ fontSize: 12, color: 'var(--theme-muted)', marginRight: 4 }}>Reden:</span>
+        {(Object.entries(REASON_LABELS) as Array<[ReturnReason, { label: string; klass: string }]>).map(([k, v]) => (
+          <button
+            key={k}
+            type="button"
+            className="badge"
+            onClick={() => toggleReason(k)}
+            style={{
+              cursor: 'pointer',
+              border: reasonFilter.has(k) ? '1px solid var(--theme-accent-border)' : '1px solid var(--border-default)',
+              background: reasonFilter.has(k) ? 'var(--theme-accent-subtle)' : 'var(--theme-card2)',
+              color: reasonFilter.has(k) ? 'var(--theme-accent)' : 'var(--theme-muted)',
+            }}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-state-icon"><Undo2 size={22} /></div>
+          <h2>Geen retouren gevonden</h2>
+          <p>Pas je zoekopdracht of filters aan.</p>
+        </div>
+      ) : (
+        <div className="table-wrap">
+          <div style={{ overflowX: 'auto' }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>RMA</th>
+                  <th>Order</th>
+                  <th>Klant</th>
+                  <th style={{ textAlign: 'right' }}>Items</th>
+                  <th>Reden</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: 'right' }}>Refund</th>
+                  <th>Aangemaakt</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((r) => (
+                  <tr key={r.id}>
+                    <td className="mono" style={{ fontWeight: 600, color: 'var(--theme-accent)' }}>{r.rmaNumber}</td>
+                    <td className="mono">{r.orderNumber}</td>
+                    <td>{r.customerName}</td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.itemsCount}</td>
+                    <td>
+                      <span className={`badge ${REASON_LABELS[r.reason].klass}`}>{REASON_LABELS[r.reason].label}</span>
+                      <div style={{ fontSize: 11, color: 'var(--theme-muted)', marginTop: 3 }}>{r.reasonDetail}</div>
+                    </td>
+                    <td><span className={`badge ${STATUS_LABELS[r.status].klass}`}>{STATUS_LABELS[r.status].label}</span></td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {r.refundAmount > 0 ? formatMoney(r.refundAmount) : <span className="muted">—</span>}
+                    </td>
+                    <td>
+                      <div style={{ fontSize: 12.5 }}>{formatDate(r.createdAt)}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{formatRelative(r.createdAt)}</div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SimpleKpi({ icon, label, value, accent }: { icon: React.ReactNode; label: string; value: string; accent: 'info' | 'success' | 'warning' | 'accent' }) {
+  const color = accent === 'info' ? 'var(--info)' : accent === 'success' ? 'var(--success)' : accent === 'warning' ? 'var(--warning)' : 'var(--theme-accent)';
+  return (
+    <div className="kpi-card">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span className="kpi-label">{label}</span>
+        <span style={{ color, display: 'inline-grid', placeItems: 'center' }}>{icon}</span>
+      </div>
+      <h2 className="kpi-value">{value}</h2>
+    </div>
+  );
+}

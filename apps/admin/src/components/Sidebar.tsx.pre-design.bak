@@ -1,0 +1,50 @@
+import { Link, useRouterState } from '@tanstack/react-router';
+import {
+  LayoutDashboard,
+  Package,
+  Boxes,
+  ListTree,
+  Settings,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+
+interface NavItem {
+  label: string;
+  to: string;
+  icon: LucideIcon;
+}
+
+const NAV: NavItem[] = [
+  { label: 'Dashboard', to: '/', icon: LayoutDashboard },
+  { label: 'Producten', to: '/products', icon: Package },
+  { label: 'Voorraad', to: '/stock', icon: Boxes },
+  { label: 'Movements', to: '/movements', icon: ListTree },
+  { label: 'Settings', to: '/settings', icon: Settings },
+];
+
+export function Sidebar() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  return (
+    <aside className="app-sidebar">
+      <div className="brand">
+        <div className="brand-mark">W</div>
+        <div className="brand-name">Webshop-CRM</div>
+      </div>
+      {NAV.map((item) => {
+        const Icon = item.icon;
+        const active = item.to === '/' ? pathname === '/' : pathname.startsWith(item.to);
+        return (
+          <Link
+            key={item.to}
+            to={item.to}
+            className="nav-link"
+            data-active={active}
+          >
+            <Icon size={16} />
+            <span>{item.label}</span>
+          </Link>
+        );
+      })}
+    </aside>
+  );
+}

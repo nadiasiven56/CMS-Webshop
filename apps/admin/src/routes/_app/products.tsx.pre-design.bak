@@ -1,0 +1,164 @@
+/**
+ * /products — productlijst.
+ *
+ * Features:
+ *   - tabel met thumbnail/title/vendor/type/status/varianten/updatedAt
+ *   - debounced search (300ms) op title
+ *   - status-filter (all / draft / active / archived)
+ *   - paginate 20/page
+ *   - "Nieuw product"-knop → /products/new
+ */
+import { createFileRoute, Link } from '@tanstack/react-router';
+import { useEffect, useMemo, useState } from 'react';
+import { ProductTable } from '@/components/product/ProductTable';
+import { useProductList } from '@/components/product/api';
+
+export const Route = createFileRoute('/_app/products')({
+  component: ProductsPage,
+});
+
+const PAGE_SIZE = 20;
+
+function ProductsPage() {
+  const [searchInput, setSearchInput] = useState('');
+  const [searchDebounced, setSearchDebounced] = useState('');
+  const [status, setStatus] = useState<string>('');
+  const [offset, setOffset] = useState(0);
+
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearchDebounced(searchInput.trim());
+      setOffset(0);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // Reset offset when filter changes
+  useEffect(() => {
+    setOffset(0);
+  }, [status]);
+
+  const params = useMemo(
+    () => ({
+      limit: PAGE_SIZE,
+      offset,
+      status: status || undefined,
+      search: searchDebounced || undefined,
+    }),
+    [offset, status, searchDebounced],
+  );
+
+  const query = useProductList(params);
+
+  const total = query.data?.total ?? 0;
+  const items = query.data?.items ?? [];
+  const page = Math.floor(offset / PAGE_SIZE) + 1;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  return (
+    <div>
+      <header
+        style={{
+          marginBottom: 20,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 16,
+          flexWrap: 'wrap',
+        }}
+      >
+        <div>
+          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0 }}>Producten</h1>
+          <p className="muted" style={{ marginTop: 4, marginBottom: 0 }}>
+            Catalogus, varianten en foto's beheren.
+          </p>
+        </div>
+        <Link to="/products/new" className="btn btn-primary">
+          + Nieuw product
+        </Link>
+      </header>
+
+      <div
+        className="card"
+        style={{
+          padding: 12,
+          marginBottom: 16,
+          display: 'flex',
+          gap: 12,
+          flexWrap: 'wrap',
+          alignItems: 'center',
+        }}
+      >
+        <input
+          aria-label="Zoek producten"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder="Zoek op titel…"
+          style={{ flex: '1 1 220px', minWidth: 200 }}
+        />
+        <select
+          aria-label="Filter op status"
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          style={{ flex: '0 0 auto' }}
+        >
+          <option value="">Alle statussen</option>
+          <option value="draft">Concept</option>
+          <option value="active">Actief</option>
+          <option value="archived">Gearchiveerd</option>
+        </select>
+        {query.isFetching && (
+          <span className="muted" style={{ fontSize: 12 }}>
+            Bijwerken…
+          </span>
+        )}
+      </div>
+
+      {query.isError ? (
+        <div className="card" style={{ borderColor: 'var(--theme-danger)' }}>
+          <p className="error-text">Kon producten niet laden. Probeer pagina-refresh.</p>
+        </div>
+      ) : (
+        <ProductTable items={items} loading={query.isLoading} />
+      )}
+
+      {total > PAGE_SIZE && (
+        <div
+          style={{
+            marginTop: 16,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+          }}
+        >
+          <span className="muted" style={{ fontSize: 13 }}>
+            {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} van {total}
+          </span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={offset === 0}
+              onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+            >
+              Vorige
+            </button>
+            <span className="muted" style={{ alignSelf: 'center', fontSize: 13 }}>
+              Pagina {page} / {totalPages}
+            </span>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={offset + PAGE_SIZE >= total}
+              onClick={() => setOffset(offset + PAGE_SIZE)}
+            >
+              Volgende
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

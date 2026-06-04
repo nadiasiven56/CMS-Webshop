@@ -1,0 +1,335 @@
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Plus, Mail, Phone, MapPin, Clock, FileText, Edit3, Power } from 'lucide-react';
+import { type MockSupplier } from '@/lib/mock-data-extended';
+import { formatMoney, countryFlag } from '@/lib/format';
+import { useSuppliers, supplierActions } from '@/lib/mock-state';
+import { Drawer } from '@/components/ui/Drawer';
+import { FormField } from '@/components/ui/FormField';
+import { toast } from '@/lib/toast';
+
+export const Route = createFileRoute('/_app/suppliers')({
+  component: SuppliersPage,
+});
+
+function SuppliersPage() {
+  const suppliers = useSuppliers();
+  const navigate = useNavigate();
+  const [edit, setEdit] = useState<MockSupplier | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <div className="page-title-row">
+            <h1 className="page-title">Leveranciers</h1>
+            <span className="count-badge">{suppliers.length}</span>
+          </div>
+          <p className="page-subtitle">Inkoop-relaties — lead-times, betalingstermijnen en jaarvolume.</p>
+        </div>
+        <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)}>
+          <Plus size={15} strokeWidth={2.2} />
+          Leverancier toevoegen
+        </button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+        {suppliers.map((s) => (
+          <div key={s.id} className="card" style={{ opacity: s.active ? 1 : 0.65, position: 'relative' }}>
+            <div className="card-header" style={{ alignItems: 'flex-start', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div
+                  style={{
+                    width: 44, height: 44, borderRadius: 10,
+                    background: 'linear-gradient(135deg, var(--surface-3), var(--surface-4))',
+                    border: '1px solid var(--border-default)',
+                    display: 'grid', placeItems: 'center',
+                    color: 'var(--theme-accent)', fontWeight: 700, fontSize: 16,
+                    flexShrink: 0,
+                  }}
+                >
+                  {s.name.slice(0, 2).toUpperCase()}
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <h2 className="card-title" style={{ marginBottom: 3 }}>{s.name}</h2>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span className="badge badge-neutral">{s.category}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        supplierActions.toggleActive(s.id);
+                        toast.success(`${s.name} ${s.active ? 'gedeactiveerd' : 'geactiveerd'}`);
+                      }}
+                      className="badge"
+                      style={{
+                        cursor: 'pointer',
+                        border: 'none',
+                        background: s.active ? 'var(--success-soft)' : 'var(--surface-3)',
+                        color: s.active ? 'var(--success)' : 'var(--theme-muted)',
+                      }}
+                    >
+                      <Power size={11} /> {s.active ? 'Actief' : 'Inactief'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12.5, color: 'var(--theme-muted)', marginBottom: 14 }}>
+              <Line icon={<MapPin size={12} />}>
+                {countryFlag(s.country)} {s.city}, {s.country}
+              </Line>
+              <Line icon={<Mail size={12} />}>
+                <span style={{ color: 'var(--text-soft)' }}>{s.contactName}</span>
+                <span style={{ marginLeft: 6 }}>{s.email}</span>
+              </Line>
+              <Line icon={<Phone size={12} />}>{s.phone}</Line>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 12 }}>
+              <Stat label="Lead-time" value={`${s.leadTimeDays} d`} icon={<Clock size={12} />} />
+              <Stat label="Betaling" value={s.paymentTerms} small />
+              <Stat label="Open PO's" value={String(s.openPoCount)} icon={<FileText size={12} />} />
+              <Stat label="YTD volume" value={formatMoney(s.ytdSpent, { decimals: false })} />
+            </div>
+
+            {s.notes && (
+              <div style={{
+                fontSize: 12, lineHeight: 1.45, padding: '8px 10px',
+                background: 'var(--surface-2)', borderRadius: 8,
+                border: '1px solid var(--border-subtle)', color: 'var(--text-soft)',
+                marginBottom: 12,
+              }}>
+                {s.notes}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                style={{ flex: 1, justifyContent: 'center' }}
+                onClick={() => setEdit(s)}
+              >
+                <Edit3 size={13} /> Bewerken
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                style={{ flex: 1, justifyContent: 'center' }}
+                onClick={() => {
+                  toast.info('Open PO-modal voor deze leverancier...');
+                  void navigate({ to: '/purchase-orders' });
+                }}
+              >
+                <FileText size={13} /> Nieuwe PO
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <SupplierDrawer
+        supplier={edit}
+        onClose={() => setEdit(null)}
+      />
+      <SupplierDrawer
+        creating={createOpen}
+        onClose={() => setCreateOpen(false)}
+      />
+    </div>
+  );
+}
+
+function SupplierDrawer({
+  supplier,
+  creating,
+  onClose,
+}: {
+  supplier?: MockSupplier | null;
+  creating?: boolean;
+  onClose: () => void;
+}) {
+  const open = creating || supplier != null;
+  const isCreate = !!creating;
+  const [name, setName] = useState('');
+  const [contactName, setContactName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [country, setCountry] = useState('NL');
+  const [city, setCity] = useState('');
+  const [category, setCategory] = useState('Espressomachines');
+  const [leadTimeDays, setLeadTimeDays] = useState(7);
+  const [paymentTerms, setPaymentTerms] = useState('Netto 30 dagen');
+  const [active, setActive] = useState(true);
+  const [notes, setNotes] = useState('');
+
+  useEffect(() => {
+    if (open) {
+      if (supplier) {
+        setName(supplier.name);
+        setContactName(supplier.contactName);
+        setEmail(supplier.email);
+        setPhone(supplier.phone);
+        setCountry(supplier.country);
+        setCity(supplier.city);
+        setCategory(supplier.category);
+        setLeadTimeDays(supplier.leadTimeDays);
+        setPaymentTerms(supplier.paymentTerms);
+        setActive(supplier.active);
+        setNotes(supplier.notes ?? '');
+      } else {
+        setName(''); setContactName(''); setEmail(''); setPhone('');
+        setCountry('NL'); setCity('');
+        setCategory('Espressomachines'); setLeadTimeDays(7);
+        setPaymentTerms('Netto 30 dagen'); setActive(true); setNotes('');
+      }
+    }
+  }, [open, supplier]);
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!name || !email) {
+      toast.error('Naam en e-mail zijn verplicht');
+      return;
+    }
+    if (isCreate) {
+      const newSup: MockSupplier = {
+        id: `sup-${Date.now()}`,
+        name,
+        contactName: contactName || name,
+        email,
+        phone: phone || '',
+        country,
+        city: city || 'Onbekend',
+        leadTimeDays,
+        paymentTerms,
+        currency: 'EUR',
+        active,
+        openPoCount: 0,
+        ytdSpent: 0,
+        category,
+        notes: notes || undefined,
+      };
+      supplierActions.add(newSup);
+      toast.success(`Leverancier ${name} toegevoegd`);
+    } else if (supplier) {
+      supplierActions.update(supplier.id, {
+        name, contactName, email, phone, country, city,
+        category, leadTimeDays, paymentTerms, active,
+        notes: notes || undefined,
+      });
+      toast.success(`Leverancier ${name} bijgewerkt`);
+    }
+    onClose();
+  }
+
+  return (
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title={isCreate ? 'Leverancier toevoegen' : supplier?.name}
+      subtitle={isCreate ? 'Inkoop-relatie aanmaken.' : supplier?.email}
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Annuleer</button>
+          <button type="submit" form="sup-form" className="btn btn-primary">
+            {isCreate ? 'Aanmaken' : 'Opslaan'}
+          </button>
+        </>
+      }
+    >
+      <form id="sup-form" onSubmit={onSubmit}>
+        <FormField label="Naam" required>
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
+        </FormField>
+        <FormField label="Categorie">
+          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+            <option>Espressomachines</option>
+            <option>Koffiemolens</option>
+            <option>Bonen & Koffie</option>
+            <option>Accessoires</option>
+            <option>Onderhoud</option>
+          </select>
+        </FormField>
+        <FormField label="Contactpersoon">
+          <input type="text" value={contactName} onChange={(e) => setContactName(e.target.value)} />
+        </FormField>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <FormField label="E-mail" required>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </FormField>
+          <FormField label="Telefoon">
+            <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          </FormField>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 100px', gap: 8 }}>
+          <FormField label="Stad">
+            <input type="text" value={city} onChange={(e) => setCity(e.target.value)} />
+          </FormField>
+          <FormField label="Land">
+            <select value={country} onChange={(e) => setCountry(e.target.value)}>
+              <option>NL</option><option>BE</option><option>DE</option><option>FR</option>
+              <option>IT</option><option>ES</option>
+            </select>
+          </FormField>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <FormField label="Lead-time (dagen)">
+            <input type="number" min={1} max={120} value={leadTimeDays} onChange={(e) => setLeadTimeDays(Number(e.target.value))} />
+          </FormField>
+          <FormField label="Betaaltermijn">
+            <select value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)}>
+              <option>Per omgaande</option>
+              <option>Netto 14 dagen</option>
+              <option>Netto 30 dagen</option>
+              <option>Netto 60 dagen</option>
+            </select>
+          </FormField>
+        </div>
+        <FormField label="Notitie">
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} style={{ resize: 'vertical', minHeight: 60 }} />
+        </FormField>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--theme-text)', padding: '10px 12px', background: 'var(--surface-2)', borderRadius: 8, marginTop: 4 }}>
+          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} style={{ width: 16, height: 16, padding: 0 }} />
+          <span>Leverancier actief — kan worden gebruikt voor nieuwe PO's</span>
+        </label>
+      </form>
+    </Drawer>
+  );
+}
+
+function Line({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{ color: 'var(--text-faint)', display: 'inline-grid', placeItems: 'center', flexShrink: 0 }}>{icon}</span>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{children}</span>
+    </div>
+  );
+}
+
+function Stat({ label, value, icon, small }: { label: string; value: string; icon?: React.ReactNode; small?: boolean }) {
+  return (
+    <div style={{
+      padding: '8px 10px',
+      background: 'var(--surface-2)',
+      border: '1px solid var(--border-subtle)',
+      borderRadius: 8,
+    }}>
+      <div style={{
+        fontSize: 10, color: 'var(--theme-muted)', textTransform: 'uppercase',
+        letterSpacing: '0.06em', fontWeight: 600,
+        display: 'flex', alignItems: 'center', gap: 4,
+      }}>
+        {icon}
+        {label}
+      </div>
+      <div style={{
+        fontSize: small ? 12.5 : 15, fontWeight: 600, color: 'var(--text-strong)',
+        fontVariantNumeric: 'tabular-nums', marginTop: 3,
+      }}>{value}</div>
+    </div>
+  );
+}

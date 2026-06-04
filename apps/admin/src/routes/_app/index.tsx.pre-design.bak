@@ -1,0 +1,67 @@
+import { createFileRoute } from '@tanstack/react-router';
+import { useAuth } from '@/lib/auth';
+
+export const Route = createFileRoute('/_app/')({
+  component: DashboardPage,
+});
+
+function DashboardPage() {
+  const auth = useAuth();
+  const user = auth.data;
+
+  return (
+    <div>
+      <header style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0 }}>Dashboard</h1>
+        <p className="muted" style={{ marginTop: 4 }}>
+          {user ? `Welkom terug, ${user.email}.` : 'Welkom terug.'}
+        </p>
+      </header>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+          gap: 16,
+        }}
+      >
+        <Stat label="Producten" value="—" hint="komt in product-CRUD" />
+        <Stat label="Voorraad-items" value="—" hint="komt in stock-feature" />
+        <Stat label="Open orders" value="0" hint="Fase 2/3" />
+        <Stat label="Omzet vandaag" value="€ 0,00" hint="Fase 4" />
+      </div>
+
+      <div className="card" style={{ marginTop: 24 }}>
+        <div className="card-header">
+          <div>
+            <h2 className="card-title">Foundation klaar</h2>
+            <div className="card-subtitle">
+              Auth + DB-schema + admin-skelet werken. Feature-agents bouwen
+              hierboven Producten / Voorraad / Image-upload.
+            </div>
+          </div>
+          <span className="pill pill-accent">Fase 1</span>
+        </div>
+        <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--theme-muted)' }}>
+          <li>Producten-pagina is een placeholder tot product-agent klaar is.</li>
+          <li>Voorraad/Movements idem voor stock-agent.</li>
+          <li>Image-upload-component idem voor image-agent.</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="card" style={{ padding: 16 }}>
+      <div style={{ fontSize: 12, color: 'var(--theme-muted)', textTransform: 'uppercase' }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 26, fontWeight: 700, marginTop: 4 }}>{value}</div>
+      {hint && (
+        <div style={{ fontSize: 12, color: 'var(--theme-muted)', marginTop: 6 }}>{hint}</div>
+      )}
+    </div>
+  );
+}

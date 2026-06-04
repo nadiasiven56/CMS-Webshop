@@ -1,0 +1,241 @@
+import { useState } from 'react';
+import { createFileRoute } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
+import { api, asApiError } from '@/lib/api';
+import { MovementsTable, type MovementRow } from '@/components/stock/MovementsTable';
+
+export const Route = createFileRoute('/_app/movements')({
+  component: MovementsPage,
+});
+
+interface MovementsResponse {
+  items: MovementRow[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+const REASON_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '', label: 'Alle redenen' },
+  { value: 'receive', label: 'Receive' },
+  { value: 'damage', label: 'Damage' },
+  { value: 'loss', label: 'Loss' },
+  { value: 'audit', label: 'Audit' },
+  { value: 'manual', label: 'Manual' },
+  { value: 'adjust', label: 'Adjust' },
+  { value: 'sale', label: 'Sale' },
+  { value: 'return', label: 'Return' },
+  { value: 'po_receive', label: 'PO receive' },
+  { value: 'transfer', label: 'Transfer' },
+];
+
+function MovementsPage() {
+  const [reason, setReason] = useState('');
+  const [fromDate, setFromDate] = useState(''); // yyyy-mm-dd
+  const [toDate, setToDate] = useState('');
+  const [itemSearch, setItemSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+
+  const queryKey = ['movements', { reason, fromDate, toDate, page, pageSize, itemSearch }];
+
+  const { data, isLoading, error, refetch, isFetching } = useQuery<MovementsResponse>({
+    queryKey,
+    queryFn: async () => {
+      const params: Record<string, string> = {
+        page: String(page),
+        pageSize: String(pageSize),
+      };
+      if (reason) params.reason = reason;
+      if (fromDate) params.from_date = new Date(`${fromDate}T00:00:00`).toISOString();
+      if (toDate) params.to_date = new Date(`${toDate}T23:59:59`).toISOString();
+      // item-search is local-only (filter on item_sku in result) — V1 simplification
+      // omdat item_id-lookup separaat zoek-endpoint vereist. Filter post-fetch.
+      const res = await api.get<MovementsResponse>('/movements', { params });
+      return res.data;
+    },
+    staleTime: 5_000,
+  });
+
+  const filteredItems = data
+    ? itemSearch.trim()
+      ? data.items.filter((m) =>
+          (m.itemSku ?? '').toLowerCase().includes(itemSearch.trim().toLowerCase()),
+        )
+      : data.items
+    : [];
+
+  const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
+
+  return (
+    <div>
+      <header style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0 }}>Movements</h1>
+        <p className="muted" style={{ marginTop: 4 }}>
+          Read-only audit-trail van alle voorraadmutaties.
+          {data && ` ${data.total} mutaties.`}
+        </p>
+      </header>
+
+      {/* Filter bar */}
+      <div
+        className="card"
+        style={{
+          padding: 12,
+          marginBottom: 16,
+          display: 'flex',
+          gap: 12,
+          flexWrap: 'wrap',
+          alignItems: 'flex-end',
+        }}
+      >
+        <Field label="Item-SKU bevat">
+          <input
+            type="text"
+            value={itemSearch}
+            onChange={(e) => setItemSearch(e.target.value)}
+            placeholder="bv. SKU-A"
+            style={inputStyle}
+          />
+        </Field>
+
+        <Field label="Reden">
+          <select
+            value={reason}
+            onChange={(e) => {
+              setReason(e.target.value);
+              setPage(1);
+            }}
+            style={inputStyle}
+          >
+            {REASON_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Van">
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => {
+              setFromDate(e.target.value);
+              setPage(1);
+            }}
+            style={inputStyle}
+          />
+        </Field>
+
+        <Field label="Tot">
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => {
+              setToDate(e.target.value);
+              setPage(1);
+            }}
+            style={inputStyle}
+          />
+        </Field>
+
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => {
+            setReason('');
+            setFromDate('');
+            setToDate('');
+            setItemSearch('');
+            setPage(1);
+          }}
+        >
+          Wissen
+        </button>
+
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => refetch()}
+          disabled={isFetching}
+          style={{ marginLeft: 'auto' }}
+        >
+          {isFetching ? 'Laden…' : 'Vernieuwen'}
+        </button>
+      </div>
+
+      {error && (
+        <div
+          role="alert"
+          style={{
+            padding: 12,
+            background: 'rgba(239,68,68,0.1)',
+            border: '1px solid rgba(239,68,68,0.3)',
+            borderRadius: 6,
+            color: '#fca5a5',
+            marginBottom: 16,
+          }}
+        >
+          Fout: {asApiError(error).message}
+        </div>
+      )}
+
+      <MovementsTable rows={filteredItems} loading={isLoading} />
+
+      {/* Pagination */}
+      {data && data.total > pageSize && (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginTop: 16,
+            fontSize: 14,
+          }}
+        >
+          <span className="muted">
+            Pagina {page} van {totalPages}
+          </span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+            >
+              Vorige
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+            >
+              Volgende
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
+      <span className="muted">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+const inputStyle: React.CSSProperties = {
+  padding: '8px 10px',
+  background: 'var(--theme-card2, rgba(255,255,255,0.04))',
+  border: '1px solid var(--theme-border, rgba(255,255,255,0.1))',
+  borderRadius: 6,
+  color: 'var(--theme-text)',
+  fontSize: 14,
+  minWidth: 140,
+};

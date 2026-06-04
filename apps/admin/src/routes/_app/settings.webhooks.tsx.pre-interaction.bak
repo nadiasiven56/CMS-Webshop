@@ -1,0 +1,103 @@
+import { createFileRoute } from '@tanstack/react-router';
+import { Plus, Webhook, CheckCheck, XCircle, RefreshCcw } from 'lucide-react';
+import { MOCK_WEBHOOKS } from '@/lib/mock-data-extended';
+import { formatRelative, formatPct } from '@/lib/format';
+import { SettingsTabs } from './settings.users';
+
+export const Route = createFileRoute('/_app/settings/webhooks')({
+  component: WebhooksPage,
+});
+
+function WebhooksPage() {
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Settings — Webhooks</h1>
+          <p className="page-subtitle">Outbound HTTP-webhooks naar externe systemen.</p>
+        </div>
+        <button type="button" className="btn btn-primary">
+          <Plus size={15} strokeWidth={2.2} />
+          Webhook toevoegen
+        </button>
+      </div>
+
+      <SettingsTabs active="webhooks" />
+
+      <div className="table-wrap">
+        <div style={{ overflowX: 'auto' }}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Endpoint</th>
+                <th>Events</th>
+                <th>Laatste delivery</th>
+                <th style={{ textAlign: 'right' }}>Success-rate</th>
+                <th style={{ textAlign: 'right' }}>Last 24u</th>
+                <th>Status</th>
+                <th style={{ textAlign: 'right' }}>Acties</th>
+              </tr>
+            </thead>
+            <tbody>
+              {MOCK_WEBHOOKS.map((w) => (
+                <tr key={w.id}>
+                  <td style={{ maxWidth: 320 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Webhook size={14} style={{ color: 'var(--theme-accent)', flexShrink: 0 }} />
+                      <div style={{ minWidth: 0 }}>
+                        <div className="mono" style={{
+                          fontSize: 11.5, fontWeight: 500,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>{w.url}</div>
+                        {w.description && (
+                          <div style={{ fontSize: 11, color: 'var(--theme-muted)', marginTop: 2 }}>{w.description}</div>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {w.events.map((e) => (
+                        <span key={e} className="badge badge-neutral" style={{ fontSize: 10.5 }}>{e}</span>
+                      ))}
+                    </div>
+                  </td>
+                  <td style={{ fontSize: 12.5, color: 'var(--theme-muted)' }}>
+                    {w.lastDeliveryAt ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {w.lastStatus === 'success'
+                          ? <CheckCheck size={12} style={{ color: 'var(--success)' }} />
+                          : <XCircle size={12} style={{ color: 'var(--danger)' }} />}
+                        {formatRelative(w.lastDeliveryAt)}
+                      </div>
+                    ) : <span className="muted">—</span>}
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    <span style={{
+                      color: w.successRate >= 0.97 ? 'var(--success)' : w.successRate >= 0.85 ? 'var(--warning)' : 'var(--danger)',
+                      fontWeight: 600, fontVariantNumeric: 'tabular-nums',
+                    }}>
+                      {formatPct(w.successRate)}
+                    </span>
+                  </td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{w.deliveriesLast24h}</td>
+                  <td>
+                    {w.active
+                      ? <span className="badge badge-success">Actief</span>
+                      : <span className="badge badge-neutral">Inactief</span>}
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    <button type="button" className="btn btn-ghost btn-sm" title="Test ping">
+                      <RefreshCcw size={13} />
+                    </button>
+                    <button type="button" className="btn btn-ghost btn-sm">⋯</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

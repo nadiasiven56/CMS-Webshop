@@ -1,0 +1,1 @@
+C:/ClaudeAgents/shared/from-agent1/webshop-crm/node_modules/.pnpm/@embedded-postgres+windows-x64@18.3.0-beta.17/node_modules/@embedded-postgres/windows-x64/native/bin/postgres.exe "-D" "C:\ClaudeAgents\shared\from-agent1\webshop-crm\.pgdata" "-p" "7432"

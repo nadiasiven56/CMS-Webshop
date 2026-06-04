@@ -1,0 +1,334 @@
+import { createFileRoute, Link } from '@tanstack/react-router';
+import { useEffect, useState, type FormEvent } from 'react';
+import {
+  Plus, ShieldCheck, MailPlus, MoreHorizontal, Edit3, Trash2, Power,
+} from 'lucide-react';
+import { type MockAdminUser } from '@/lib/mock-data-extended';
+import { formatRelative, formatDate, initials } from '@/lib/format';
+import { useUsers, userActions } from '@/lib/mock-state';
+import { Drawer } from '@/components/ui/Drawer';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { FormField } from '@/components/ui/FormField';
+import { toast } from '@/lib/toast';
+
+export const Route = createFileRoute('/_app/settings/users')({
+  component: UsersPage,
+});
+
+const ROLE_LABEL: Record<string, { label: string; klass: string }> = {
+  admin: { label: 'Admin', klass: 'badge-accent' },
+  staff: { label: 'Staff', klass: 'badge-info' },
+  fulfillment: { label: 'Fulfillment', klass: 'badge-info' },
+  finance: { label: 'Finance', klass: 'badge-warning' },
+  readonly: { label: 'Read-only', klass: 'badge-neutral' },
+};
+
+function UsersPage() {
+  const users = useUsers();
+  const [edit, setEdit] = useState<MockAdminUser | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [actionMenu, setActionMenu] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<MockAdminUser | null>(null);
+
+  useEffect(() => {
+    if (!actionMenu) return;
+    function onClick() { setActionMenu(null); }
+    window.addEventListener('click', onClick);
+    return () => window.removeEventListener('click', onClick);
+  }, [actionMenu]);
+
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Settings — Users</h1>
+          <p className="page-subtitle">Admin-gebruikers van het CRM. API-tokens en webhooks staan in aparte pagina's.</p>
+        </div>
+        <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)}>
+          <Plus size={15} strokeWidth={2.2} />
+          Gebruiker uitnodigen
+        </button>
+      </div>
+
+      <SettingsTabs active="users" />
+
+      <div className="table-wrap">
+        <div style={{ overflowX: 'auto' }}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Naam</th>
+                <th>Email</th>
+                <th>Rol</th>
+                <th>2FA</th>
+                <th>Laatste login</th>
+                <th>Aangemaakt</th>
+                <th>Status</th>
+                <th style={{ width: 40 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => {
+                const role = ROLE_LABEL[u.role] ?? { label: u.role, klass: 'badge-neutral' };
+                return (
+                  <tr key={u.id} onClick={() => setEdit(u)} style={{ cursor: 'pointer' }}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div className="avatar" style={{ width: 30, height: 30, fontSize: 11 }}>
+                          {initials(u.name)}
+                        </div>
+                        <div style={{ fontWeight: 500 }}>{u.name}</div>
+                      </div>
+                    </td>
+                    <td style={{ fontSize: 12.5, color: 'var(--theme-muted)' }}>{u.email}</td>
+                    <td><span className={`badge ${role.klass}`}>{role.label}</span></td>
+                    <td>
+                      {u.twoFactor ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--success)' }}>
+                          <ShieldCheck size={12} /> Aan
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 12, color: 'var(--theme-muted)' }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ fontSize: 12.5, color: 'var(--theme-muted)' }}>
+                      {u.lastLoginAt ? formatRelative(u.lastLoginAt) : <span className="muted">Nooit</span>}
+                    </td>
+                    <td style={{ fontSize: 12.5, color: 'var(--theme-muted)' }}>{formatDate(u.createdAt)}</td>
+                    <td>
+                      {u.active ? (
+                        <span className="badge badge-success">Actief</span>
+                      ) : (
+                        <span className="badge badge-warning">
+                          <MailPlus size={11} /> Uitnodiging
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActionMenu(actionMenu === u.id ? null : u.id);
+                        }}
+                        aria-label="Acties"
+                      >
+                        <MoreHorizontal size={14} />
+                      </button>
+                      {actionMenu === u.id && (
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            position: 'absolute',
+                            top: '100%',
+                            right: 8,
+                            zIndex: 20,
+                            background: 'var(--theme-card)',
+                            border: '1px solid var(--border-strong)',
+                            borderRadius: 10,
+                            boxShadow: 'var(--shadow-lg)',
+                            minWidth: 180,
+                            padding: 4,
+                            display: 'flex',
+                            flexDirection: 'column',
+                          }}
+                        >
+                          <ActionMenuItem
+                            icon={<Edit3 size={13} />}
+                            label="Bewerken"
+                            onClick={() => { setActionMenu(null); setEdit(u); }}
+                          />
+                          <ActionMenuItem
+                            icon={<Power size={13} />}
+                            label={u.active ? 'Deactiveren' : 'Activeren'}
+                            onClick={() => {
+                              setActionMenu(null);
+                              userActions.update(u.id, { active: !u.active });
+                              toast.success(`${u.name} ${u.active ? 'gedeactiveerd' : 'geactiveerd'}`);
+                            }}
+                          />
+                          <ActionMenuItem
+                            icon={<Trash2 size={13} />}
+                            label="Verwijderen"
+                            danger
+                            onClick={() => { setActionMenu(null); setConfirmDelete(u); }}
+                          />
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <UserDrawer user={edit} onClose={() => setEdit(null)} />
+      <UserDrawer creating={createOpen} onClose={() => setCreateOpen(false)} />
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={() => {
+          if (confirmDelete) {
+            userActions.remove(confirmDelete.id);
+            toast.success(`${confirmDelete.name} verwijderd`);
+          }
+        }}
+        title="Gebruiker verwijderen?"
+        message={`${confirmDelete?.name} verliest direct toegang tot het CRM.`}
+        confirmLabel="Ja, verwijder"
+      />
+    </div>
+  );
+}
+
+function ActionMenuItem({
+  icon, label, onClick, danger,
+}: { icon: React.ReactNode; label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '7px 10px', background: 'transparent', border: 'none', borderRadius: 6,
+        color: danger ? 'var(--danger)' : 'var(--theme-text)',
+        textAlign: 'left', cursor: 'pointer', fontSize: 13,
+      }}
+      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--surface-3)'; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+    >
+      {icon} {label}
+    </button>
+  );
+}
+
+function UserDrawer({
+  user, creating, onClose,
+}: { user?: MockAdminUser | null; creating?: boolean; onClose: () => void }) {
+  const open = creating || user != null;
+  const isCreate = !!creating;
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<MockAdminUser['role']>('staff');
+  const [twoFactor, setTwoFactor] = useState(false);
+  const [active, setActive] = useState(true);
+
+  useEffect(() => {
+    if (open) {
+      if (user) {
+        setName(user.name); setEmail(user.email); setRole(user.role);
+        setTwoFactor(user.twoFactor); setActive(user.active);
+      } else {
+        setName(''); setEmail(''); setRole('staff'); setTwoFactor(false); setActive(false);
+      }
+    }
+  }, [open, user]);
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!name || !email) {
+      toast.error('Naam en e-mail zijn verplicht');
+      return;
+    }
+    if (isCreate) {
+      const newUser: MockAdminUser = {
+        id: `user-${Date.now()}`,
+        name,
+        email,
+        role,
+        twoFactor,
+        active: false,
+        createdAt: new Date().toISOString(),
+      };
+      userActions.add(newUser);
+      toast.success(`Uitnodiging verstuurd naar ${email}`);
+    } else if (user) {
+      userActions.update(user.id, { name, email, role, twoFactor, active });
+      toast.success(`${name} bijgewerkt`);
+    }
+    onClose();
+  }
+
+  return (
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title={isCreate ? 'Gebruiker uitnodigen' : user?.name}
+      subtitle={isCreate ? 'Vul e-mail in en kies een rol — uitnodiging wordt verstuurd.' : user?.email}
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Annuleer</button>
+          <button type="submit" form="user-form" className="btn btn-primary">
+            {isCreate ? 'Uitnodigen' : 'Opslaan'}
+          </button>
+        </>
+      }
+    >
+      <form id="user-form" onSubmit={onSubmit}>
+        <FormField label="Naam" required>
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
+        </FormField>
+        <FormField label="E-mail" required>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        </FormField>
+        <FormField label="Rol">
+          <select value={role} onChange={(e) => setRole(e.target.value as MockAdminUser['role'])}>
+            <option value="admin">Admin — volledige toegang</option>
+            <option value="staff">Staff — algemene toegang</option>
+            <option value="fulfillment">Fulfillment — orders & voorraad</option>
+            <option value="finance">Finance — financieel & boekhouding</option>
+            <option value="readonly">Read-only — alleen lezen</option>
+          </select>
+        </FormField>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '10px 12px', background: 'var(--surface-2)', borderRadius: 8, marginTop: 8 }}>
+          <input type="checkbox" checked={twoFactor} onChange={(e) => setTwoFactor(e.target.checked)} style={{ width: 16, height: 16, padding: 0 }} />
+          <span>2FA verplicht (TOTP — gebruiker moet bij eerste login instellen)</span>
+        </label>
+        {!isCreate && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '10px 12px', background: 'var(--surface-2)', borderRadius: 8, marginTop: 8 }}>
+            <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} style={{ width: 16, height: 16, padding: 0 }} />
+            <span>Actief</span>
+          </label>
+        )}
+      </form>
+    </Drawer>
+  );
+}
+
+export function SettingsTabs({ active }: { active: 'general' | 'users' | 'tokens' | 'webhooks' }) {
+  return (
+    <div className="segmented" style={{ marginBottom: 20 }}>
+      <Link
+        to="/settings"
+        data-active={active === 'general'}
+        style={{ textDecoration: 'none' }}
+      >
+        Algemeen
+      </Link>
+      <Link
+        to="/settings/users"
+        data-active={active === 'users'}
+        style={{ textDecoration: 'none' }}
+      >
+        Users
+      </Link>
+      <Link
+        to="/settings/tokens"
+        data-active={active === 'tokens'}
+        style={{ textDecoration: 'none' }}
+      >
+        API-tokens
+      </Link>
+      <Link
+        to="/settings/webhooks"
+        data-active={active === 'webhooks'}
+        style={{ textDecoration: 'none' }}
+      >
+        Webhooks
+      </Link>
+    </div>
+  );
+}

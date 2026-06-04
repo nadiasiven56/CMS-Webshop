@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build artefacten
+dist/
+build/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Storage / runtime
+storage/
+.docker-data/
+*.log
+logs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Backups van finalize-passes
+.pre-finalize.bak/
+*.pre-finalize.bak
+
+# Drizzle
+apps/api/drizzle/meta/_journal.json.backup
+
+# Tests
+coverage/
+.nyc_output/
+playwright-report/
+test-results/

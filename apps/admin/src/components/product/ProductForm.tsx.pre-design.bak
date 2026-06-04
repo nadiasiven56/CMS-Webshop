@@ -1,0 +1,145 @@
+import { useState } from 'react';
+import type { ProductWithRelations, ProductStatus } from './types';
+
+export interface ProductFormValues {
+  title: string;
+  slug?: string;
+  vendor: string;
+  productType: string;
+  descriptionHtml: string;
+  status: ProductStatus;
+  tags: string[];
+}
+
+interface Props {
+  initial?: Partial<ProductWithRelations>;
+  onSubmit: (values: ProductFormValues) => Promise<void> | void;
+  submitLabel?: string;
+  submitting?: boolean;
+}
+
+export function ProductForm({ initial, onSubmit, submitLabel = 'Opslaan', submitting }: Props) {
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [slug, setSlug] = useState(initial?.slug ?? '');
+  const [vendor, setVendor] = useState(initial?.vendor ?? '');
+  const [productType, setProductType] = useState(initial?.productType ?? '');
+  const [descriptionHtml, setDescriptionHtml] = useState(initial?.descriptionHtml ?? '');
+  const [status, setStatus] = useState<ProductStatus>(
+    (initial?.status as ProductStatus) ?? 'draft',
+  );
+  const [tagsRaw, setTagsRaw] = useState((initial?.tags ?? []).join(', '));
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        const tags = tagsRaw
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean);
+        const values: ProductFormValues = {
+          title: title.trim(),
+          ...(slug.trim() ? { slug: slug.trim() } : {}),
+          vendor: vendor.trim(),
+          productType: productType.trim(),
+          descriptionHtml,
+          status,
+          tags,
+        };
+        void onSubmit(values);
+      }}
+    >
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h2 className="card-title" style={{ marginBottom: 12 }}>
+          Algemeen
+        </h2>
+
+        <div className="field">
+          <label htmlFor="p-title">Titel</label>
+          <input
+            id="p-title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="bv. La Pavoni Stradivari Espresso"
+            required
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="p-slug">URL-slug (optioneel — leeg = auto)</label>
+          <input
+            id="p-slug"
+            value={slug}
+            onChange={(e) => setSlug(e.target.value)}
+            placeholder="auto-generated"
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="p-desc">Omschrijving (HTML/Markdown — V1 plain)</label>
+          <textarea
+            id="p-desc"
+            value={descriptionHtml}
+            onChange={(e) => setDescriptionHtml(e.target.value)}
+            rows={6}
+          />
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: 12,
+          }}
+        >
+          <div className="field">
+            <label htmlFor="p-vendor">Vendor</label>
+            <input
+              id="p-vendor"
+              value={vendor}
+              onChange={(e) => setVendor(e.target.value)}
+              placeholder="Merk"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="p-type">Product type</label>
+            <input
+              id="p-type"
+              value={productType}
+              onChange={(e) => setProductType(e.target.value)}
+              placeholder="bv. Espressomachine"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="p-status">Status</label>
+            <select
+              id="p-status"
+              value={status}
+              onChange={(e) => setStatus(e.target.value as ProductStatus)}
+            >
+              <option value="draft">Concept</option>
+              <option value="active">Actief</option>
+              <option value="archived">Gearchiveerd</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="field">
+          <label htmlFor="p-tags">Tags (komma-gescheiden)</label>
+          <input
+            id="p-tags"
+            value={tagsRaw}
+            onChange={(e) => setTagsRaw(e.target.value)}
+            placeholder="koffie, espresso"
+          />
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <button type="submit" className="btn btn-primary" disabled={submitting}>
+          {submitting ? 'Bezig…' : submitLabel}
+        </button>
+      </div>
+    </form>
+  );
+}
