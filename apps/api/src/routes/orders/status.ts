@@ -12,7 +12,9 @@ import type { Context } from 'hono';
 import { eq } from 'drizzle-orm';
 import { db } from '../../lib/db.js';
 import { orders } from '../../db/schema/orders.js';
+import { orderItems } from '../../db/schema/order-items.js';
 import { runInTransactionWithAudit } from '../../domain/stock/transaction-helpers.js';
+import { postOrderRevenue, reverseOrderLedger } from '../../domain/finance/ledger-posting.js';
 import {
   isValidTransition,
   allowedNextStatuses,
@@ -81,6 +83,30 @@ export async function updateOrderStatus(c: Context): Promise<Response> {
       .where(eq(orders.id, id))
       .returning();
     if (!row) throw new Error('order update returned no row');
+
+    // ── Grootboek synchroniseren met de financiële transitie ──
+    // De status-route is een ALTERNATIEF paid/refunded/cancelled-pad. Houd het
+    // grootboek in lijn met de getoonde status (anders divergeren source=orders
+    // en source=ledger).
+    if (derived.financialStatus === 'paid' && existing.financialStatus !== 'paid') {
+      // Boek de omzet (idempotent: doet niets als de payments-route al boekte).
+      const items = await tx
+        .select({
+          quantity: orderItems.quantity,
+          costPrice: orderItems.costPrice,
+          taxRate: orderItems.taxRate,
+        })
+        .from(orderItems)
+        .where(eq(orderItems.orderId, id));
+      await postOrderRevenue(tx, row, items);
+    } else if (
+      (to === 'refunded' || to === 'cancelled') &&
+      existing.financialStatus === 'paid'
+    ) {
+      // Eerder geboekte omzet terugdraaien bij een status-only refund/annulering
+      // (zonder bijbehorende return). Netto P&L-effect wordt 0.
+      await reverseOrderLedger(tx, id);
+    }
 
     audit.set({
       actor: { type: 'user', id: user.id },

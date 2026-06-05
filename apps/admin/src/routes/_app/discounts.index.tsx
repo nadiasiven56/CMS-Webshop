@@ -26,6 +26,7 @@ import {
 import { formatDate } from '@/lib/format';
 import { asApiError } from '@/lib/api';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ClickableRow } from '@/components/ui/ClickableRow';
 import { SkeletonTableRows } from '@/components/ui/Skeleton';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { toast } from '@/lib/toast';
@@ -125,7 +126,11 @@ function DiscountsPage() {
                   </thead>
                   <tbody>
                     {discounts.map((d) => (
-                      <tr key={d.id} onClick={() => openEdit(d)} style={{ cursor: 'pointer' }}>
+                      <ClickableRow
+                        key={d.id}
+                        onActivate={() => openEdit(d)}
+                        ariaLabel={`Bewerk kortingscode ${d.code}`}
+                      >
                         <td>
                           <span className="mono" style={{ color: 'var(--theme-accent)', fontWeight: 600 }}>
                             {d.code}
@@ -181,7 +186,7 @@ function DiscountsPage() {
                             </button>
                           </div>
                         </td>
-                      </tr>
+                      </ClickableRow>
                     ))}
                   </tbody>
                 </table>

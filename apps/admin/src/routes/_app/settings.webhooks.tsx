@@ -26,6 +26,7 @@ import { Drawer } from '@/components/ui/Drawer';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { FormField } from '@/components/ui/FormField';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ClickableRow } from '@/components/ui/ClickableRow';
 import { SkeletonTableRows } from '@/components/ui/Skeleton';
 import { toast } from '@/lib/toast';
 
@@ -131,7 +132,12 @@ function WebhooksPage() {
                 {items.map((w) => {
                   const scope = SCOPE_LABELS[w.scope] ?? { label: w.scope, klass: 'badge-neutral' };
                   return (
-                    <tr key={w.id} onClick={() => setEdit(w)} style={{ cursor: 'pointer', opacity: w.active ? 1 : 0.6 }}>
+                    <ClickableRow
+                      key={w.id}
+                      onActivate={() => setEdit(w)}
+                      ariaLabel={`Bewerk webhook ${w.url}`}
+                      style={{ opacity: w.active ? 1 : 0.6 }}
+                    >
                       <td style={{ maxWidth: 320 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <WebhookIcon size={14} style={{ color: 'var(--theme-accent)', flexShrink: 0 }} />
@@ -201,7 +207,7 @@ function WebhooksPage() {
                           </div>
                         )}
                       </td>
-                    </tr>
+                    </ClickableRow>
                   );
                 })}
               </tbody>

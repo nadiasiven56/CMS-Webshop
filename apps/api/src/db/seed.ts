@@ -80,11 +80,28 @@ async function main() {
   logger.info('Seed OK.');
 }
 
+/**
+ * Exit-contract (zodat de container-entrypoint ECHTE fouten kan onderscheiden
+ * van een idempotente no-op re-seed):
+ *   - exit 0  → seed klaar (verse seed óf alles-al-aanwezig; allebei OK).
+ *   - exit 1  → ECHTE fout (DB onbereikbaar, constraint-violation, code-bug).
+ *
+ * Elke seed-stap is zelf idempotent (checkt op bestaan en skipt). "Niets te
+ * doen" gooit dus niet en valt onder exit 0. Alleen een onverwachte throw is
+ * een failure → exit 1, zodat `restart: unless-stopped` de container herstart
+ * i.p.v. stil door te starten met een half-geseede DB.
+ */
 main()
-  .catch((err) => {
-    logger.error({ err }, 'Seed failed');
-    process.exitCode = 1;
-  })
-  .finally(async () => {
+  .then(async () => {
     await closeDb();
+    process.exit(0);
+  })
+  .catch(async (err) => {
+    logger.error({ err }, 'Seed failed');
+    try {
+      await closeDb();
+    } catch {
+      /* sluiten mocht al falen — exit-code blijft 1 */
+    }
+    process.exit(1);
   });

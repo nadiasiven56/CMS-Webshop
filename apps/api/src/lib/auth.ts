@@ -119,15 +119,37 @@ export async function invalidateSession(token: string): Promise<void> {
 
 export const SESSION_COOKIE_NAME = 'webshop_crm_session';
 
+/**
+ * Bepaal of de sessie-cookie `Secure` moet zijn — ONTKOPPELD van NODE_ENV.
+ *
+ * Historisch werd `Secure` puur uit `NODE_ENV==='production'` afgeleid, wat de
+ * gedocumenteerde HTTP-only deploy-variant (Caddy op :80) brak: browsers
+ * weigeren een `Secure`-cookie over plain HTTP, dus de login lukte niet.
+ *
+ * Nieuwe regel:
+ *   1. `COOKIE_SECURE` expliciet gezet  → die waarde wint (true/false).
+ *   2. Anders afgeleid: alleen `Secure` als we in productie draaien ÉN de
+ *      publieke URL https is (API_PUBLIC_URL of, als fallback, PUBLIC_BASE_URL).
+ *
+ * Achter een TLS-terminerende proxy (Cloudflare-tunnel) waar Caddy intern op
+ * :80 draait maar de gebruiker extern https krijgt: zet `COOKIE_SECURE=true`.
+ */
+export function isCookieSecure(): boolean {
+  if (env.COOKIE_SECURE !== undefined) return env.COOKIE_SECURE;
+  if (env.NODE_ENV !== 'production') return false;
+  const publicUrl = env.API_PUBLIC_URL || env.PUBLIC_BASE_URL || '';
+  return publicUrl.startsWith('https');
+}
+
 export function buildSessionCookie(token: string, expiresAt: Date): string {
   const maxAgeSec = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
-  const isProd = env.NODE_ENV === 'production';
+  const secure = isCookieSecure();
   return [
     `${SESSION_COOKIE_NAME}=${token}`,
     'Path=/',
     'HttpOnly',
     'SameSite=Lax',
-    isProd ? 'Secure' : '',
+    secure ? 'Secure' : '',
     `Max-Age=${maxAgeSec}`,
   ]
     .filter(Boolean)
@@ -135,13 +157,13 @@ export function buildSessionCookie(token: string, expiresAt: Date): string {
 }
 
 export function buildClearedSessionCookie(): string {
-  const isProd = env.NODE_ENV === 'production';
+  const secure = isCookieSecure();
   return [
     `${SESSION_COOKIE_NAME}=`,
     'Path=/',
     'HttpOnly',
     'SameSite=Lax',
-    isProd ? 'Secure' : '',
+    secure ? 'Secure' : '',
     'Max-Age=0',
   ]
     .filter(Boolean)

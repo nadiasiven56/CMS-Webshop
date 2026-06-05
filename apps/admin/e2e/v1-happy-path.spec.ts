@@ -33,8 +33,11 @@ test('V1 happy-path: login → producten → stock → adjust → movements', as
   await page.goto('/login');
   await expect(page).toHaveURL(/\/login$/);
 
-  await page.getByLabel(/e-?mail/i).fill(ADMIN_EMAIL);
-  await page.getByLabel(/wachtwoord|password/i).fill(ADMIN_PASSWORD);
+  // Gebruik de veld-id's (#email/#password): robuuster dan getByLabel, want
+  // de "Toon wachtwoord"-toggle heeft ook aria-label "... wachtwoord" → een
+  // label-regex zou meerdere elementen matchen (strict-mode-fout).
+  await page.locator('#email').fill(ADMIN_EMAIL);
+  await page.locator('#password').fill(ADMIN_PASSWORD);
   await page.getByRole('button', { name: /inloggen|log\s*in/i }).click();
 
   // After login we should be redirected into the app shell.
@@ -60,8 +63,11 @@ test('V1 happy-path: login → producten → stock → adjust → movements', as
   }
 
   // ─── 3. Klik 1 product → detail ────────────────────────────
-  // Gebruik eerste link naar /products/<id>
-  const firstProductLink = page.locator('a[href^="/products/"]').first();
+  // Eerste link naar een echt product (/products/<id>) — NIET de
+  // "Nieuw product"-knop (/products/new) die bovenaan de lijst staat.
+  const firstProductLink = page
+    .locator('a[href^="/products/"]:not([href$="/new"])')
+    .first();
   await expect(firstProductLink).toBeVisible({ timeout: 10_000 });
   await firstProductLink.click();
   await expect(page).toHaveURL(/\/products\/[^/]+$/);

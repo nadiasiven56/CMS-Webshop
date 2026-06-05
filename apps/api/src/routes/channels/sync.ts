@@ -11,7 +11,7 @@
  * Het resultaat-object (`ordersImported`/`listingsPushed`/`errors` +
  * `notConnected`) laat de route z'n bestaande 409/200-gedrag exact reproduceren.
  */
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db } from '../../lib/db.js';
 import { logger } from '../../lib/logger.js';
 import { runInTransactionWithAudit } from '../../domain/stock/transaction-helpers.js';
@@ -51,7 +51,11 @@ async function upsertChannelOrder(
     .values({ channelId, externalOrderId, orderId, raw })
     .onConflictDoUpdate({
       target: [channelOrders.channelId, channelOrders.externalOrderId],
-      set: { orderId, raw },
+      // orderId alleen overschrijven met een NIEUWE niet-null waarde: behoud een
+      // bestaande CRM-order-koppeling bij een marketplace re-sync (anders zou de
+      // volgende scheduler-tick de koppeling met null overschrijven). raw ververst
+      // altijd.
+      set: { orderId: sql`coalesce(excluded.order_id, ${channelOrders.orderId})`, raw },
     });
 }
 

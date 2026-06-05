@@ -1,5 +1,6 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
+import { useFocusTrap } from '@/lib/use-focus-trap';
 
 export interface ModalProps {
   open: boolean;
@@ -23,6 +24,9 @@ export function Modal({
   children,
   lockBackdrop,
 }: ModalProps) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -37,6 +41,9 @@ export function Modal({
     };
   }, [open, onClose]);
 
+  // Focus-trap: Tab cyclet binnen de modal, initiële focus, focus-restore.
+  useFocusTrap(cardRef, open);
+
   if (!open) return null;
 
   return (
@@ -49,10 +56,12 @@ export function Modal({
       role="presentation"
     >
       <div
+        ref={cardRef}
         className="modal-card"
         style={{ maxWidth }}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
       >
         {(title || subtitle) && (
           <header
@@ -67,6 +76,7 @@ export function Modal({
             <div style={{ minWidth: 0 }}>
               {title && (
                 <h2
+                  id={titleId}
                   style={{
                     margin: 0,
                     fontSize: 16,

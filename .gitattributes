@@ -1,0 +1,19 @@
+# Forceer LF voor tekstbestanden zodat shell-scripts en Docker-config ook na
+# een clone op een Linux-server correcte line-endings hebben.
+* text=auto eol=lf
+
+# Expliciet LF (draaien in Linux-containers)
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+Caddyfile   text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+
+# Binaire bestanden ongemoeid laten
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.webp binary
+*.ico  binary
+*.gz   binary
+*.pdf  binary

@@ -752,8 +752,11 @@ financeRoutes.post('/exports/oss', async (c) => {
     const fromMonth = (q - 1) * 3 + 1;
     const from = `${year}-${String(fromMonth).padStart(2, '0')}-01`;
     const toMonth = fromMonth + 2;
-    // laatste dag van het kwartaal-eind-maand
-    const to = `${year}-${String(toMonth).padStart(2, '0')}-31`;
+    // Laatste dag van de kwartaal-eind-maand. Hardcoded '-31' was ongeldig voor
+    // Q2 (juni) en Q3 (sept) → Postgres-fout/500. Dag 0 van de VOLGENDE maand =
+    // laatste dag van toMonth (toMonth is 1-based; Date.UTC-maand is 0-based).
+    const lastDay = new Date(Date.UTC(year, toMonth, 0)).getUTCDate();
+    const to = `${year}-${String(toMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
     const conds = [gte(ledgerEntries.entryDate, from), lte(ledgerEntries.entryDate, to)];
     if (shop_id) conds.push(eq(ledgerEntries.shopId, shop_id));

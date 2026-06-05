@@ -43,6 +43,9 @@ function applyBranding(shop: Shop): void {
     );
   }
   document.title = shop.name;
+  // Zet de document-taal op de shop-locale (bv. 'nl-NL' → <html lang="nl-NL">)
+  // voor toegankelijkheid + correcte hyphenation/spraak.
+  if (shop.locale) root.lang = shop.locale;
 }
 
 export function ShopProvider({ children }: { children: ReactNode }) {

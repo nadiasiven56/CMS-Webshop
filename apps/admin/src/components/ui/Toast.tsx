@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 
 export interface ToastMsg {
@@ -18,17 +18,43 @@ const ICONS = {
   info: AlertCircle,
 };
 
+const AUTO_DISMISS_MS = 2600;
+
 export function Toast({ toast, onDismiss }: Props) {
+  // Pauzeer de auto-dismiss zolang de gebruiker hovert of focus heeft op de
+  // toast, zodat berichten (incl. errors) lang genoeg leesbaar blijven en de
+  // dismiss-knop bereikbaar is. We hervatten met de resterende tijd.
+  const [paused, setPaused] = useState(false);
+  const remainingRef = useRef(AUTO_DISMISS_MS);
+  const startedAtRef = useRef(Date.now());
+
   useEffect(() => {
-    const t = setTimeout(() => onDismiss(toast.id), 2600);
-    return () => clearTimeout(t);
-  }, [toast.id, onDismiss]);
+    if (paused) return;
+    startedAtRef.current = Date.now();
+    const t = setTimeout(() => onDismiss(toast.id), remainingRef.current);
+    return () => {
+      clearTimeout(t);
+      // Bewaar resterende tijd bij pauze (cleanup loopt vóór de volgende run).
+      remainingRef.current = Math.max(
+        0,
+        remainingRef.current - (Date.now() - startedAtRef.current),
+      );
+    };
+  }, [paused, toast.id, onDismiss]);
 
   const Icon = ICONS[toast.kind];
   const cls = toast.kind === 'success' ? 'toast-success' : toast.kind === 'error' ? 'toast-error' : '';
 
   return (
-    <div className={`toast ${cls}`}>
+    <div
+      className={`toast ${cls}`}
+      // Errors lezen we direct voor (assertive); overige berichten beleefd.
+      role={toast.kind === 'error' ? 'alert' : 'status'}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocusCapture={() => setPaused(true)}
+      onBlurCapture={() => setPaused(false)}
+    >
       <Icon size={16} />
       <span style={{ flex: 1 }}>{toast.text}</span>
       <button
@@ -36,7 +62,7 @@ export function Toast({ toast, onDismiss }: Props) {
         onClick={() => onDismiss(toast.id)}
         className="icon-btn"
         style={{ width: 24, height: 24 }}
-        aria-label="Dismiss"
+        aria-label="Sluiten"
       >
         <X size={12} />
       </button>
@@ -51,9 +77,15 @@ export function ToastContainer({
   toasts: ToastMsg[];
   onDismiss: (id: string) => void;
 }) {
-  if (toasts.length === 0) return null;
+  // Container blijft altijd in de DOM (ook leeg) zodat de live-region door
+  // assistive tech wordt gevolgd en nieuwe toasts worden aangekondigd.
   return (
-    <div className="toast-container">
+    <div
+      className="toast-container"
+      role="region"
+      aria-label="Meldingen"
+      aria-live="polite"
+    >
       {toasts.map((t) => (
         <Toast key={t.id} toast={t} onDismiss={onDismiss} />
       ))}

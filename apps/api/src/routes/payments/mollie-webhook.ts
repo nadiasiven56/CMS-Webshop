@@ -33,6 +33,7 @@ import { postOrderRevenue } from '../../domain/finance/ledger-posting.js';
 import { getPaymentProvider } from '../../domain/payments/index.js';
 import { MollieProvider } from '../../domain/payments/mollie.js';
 import { PaymentProviderError } from '../../domain/payments/types.js';
+import { fireOrderPaid } from '../../domain/orchestration/order-events.js';
 
 /**
  * Parse the Mollie webhook body. Mollie sends `application/x-www-form-urlencoded`
@@ -145,6 +146,10 @@ export async function mollieWebhook(c: Context): Promise<Response> {
   // 4) Apply the authoritative status (idempotent transaction).
   if (status === 'paid') {
     await markOrderPaid(order.id, paymentRow.id, c.req.header('x-forwarded-for') ?? null);
+    // Transactionele bevestiging + order.paid-webhook. De storefront-checkout
+    // slaat dit in de PSP-flow bewust over ('later via de payments-webhook') —
+    // hier sluiten we de e-mail-/webhook-keten voor élke echte PSP-betaling.
+    void fireOrderPaid({ ...order, status: 'paid', financialStatus: 'paid' });
     logger.info({ paymentId, orderId: order.id }, 'mollie webhook: order marked paid + ledger posted');
     return c.json({ ok: true, status: 'paid' }, 200);
   }

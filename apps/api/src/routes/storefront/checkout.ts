@@ -49,6 +49,8 @@ import {
   recordDiscountRedemption,
 } from '../../domain/discounts/validate.js';
 import { fireOrderCreated, fireOrderPaid } from '../../domain/orchestration/order-events.js';
+import { splitVat } from '../../domain/finance/vat-math.js';
+import { nextOrderNumber as nextOrderNumberForShop } from '../../domain/orders/order-number.js';
 
 /**
  * Toegestane order-channels (matcht orders.channel comment: web | bol | amazon | gmc).
@@ -206,8 +208,13 @@ export async function checkout(c: Context): Promise<Response> {
     exempt: 0,
   };
 
-  let subtotal = money(0); // excl. niets — som van line-totals (incl/excl btw afhankelijk van shop, V1: prijs = bruto)
-  let taxTotal = money(0);
+  // Storefront-prijzen zijn BRUTO (incl. btw). Per regel splitsen we de
+  // ingesloten btw eruit IN HELE CENTEN (geen float-drift) zodat order.subtotal
+  // NETTO is en order.taxTotal de btw — exact wat het grootboek (revenue =
+  // netto, vat_payable = btw) leest. net+btw blijft exact gelijk aan het bruto
+  // bedrag dat de klant ziet en betaalt (geen afrond-lek).
+  let subtotalNetCents = 0;
+  let taxCents = 0;
   const orderItemsToInsert: Array<{
     variantId: string;
     sku: string | null;
@@ -222,44 +229,44 @@ export async function checkout(c: Context): Promise<Response> {
 
   for (const r of lineRows) {
     const sp = shopProductByProduct.get(r.productId)!;
-    const unit = effectivePrice(
+    const grossUnit = effectivePrice(
       { price: r.variantPrice },
       sp.priceOverride ?? null,
     );
-    const lt = money(Number(unit) * r.quantity);
     const taxRate = VAT_BY_CLASS[r.variantTaxClass] ?? 21;
-    // Prijs is bruto (incl. btw) — V1-aanname. btw-deel = lt * rate/(100+rate).
-    const taxAmount = money((Number(lt) * taxRate) / (100 + taxRate));
-    subtotal = money(Number(subtotal) + Number(lt));
-    taxTotal = money(Number(taxTotal) + Number(taxAmount));
+    const grossLineCents = moneyToCents(grossUnit) * r.quantity;
+    const { netCents, vatCents } = splitVat(grossLineCents, taxRate, true);
+    subtotalNetCents += netCents;
+    taxCents += vatCents;
+    // unitPrice = netto stuksprijs (admin-conventie); lineTotal = bruto regel.
+    const netUnitCents = r.quantity > 0 ? Math.round(netCents / r.quantity) : netCents;
     orderItemsToInsert.push({
       variantId: r.variantId,
       sku: r.variantSku,
       title: r.productTitle,
       quantity: r.quantity,
-      unitPrice: unit,
+      unitPrice: centsToDecimal(netUnitCents),
       taxRate: String(taxRate),
-      taxAmount,
+      taxAmount: centsToDecimal(vatCents),
       costPrice: r.variantCost,
-      lineTotal: lt,
+      lineTotal: centsToDecimal(grossLineCents),
     });
   }
 
   let shippingTotal = money(input.shippingTotal);
 
-  // ── Optionele kortingscode (de ENIGE gedrags-uitbreiding) ──
-  // Afwezig → discountTotal blijft '0' en de totalen zijn ongewijzigd. Aanwezig
-  // → valideer in centen tegen het subtotaal; ongeldig = 400 (geen order). De
-  // werkelijke redemption wordt BINNEN de order-tx geschreven (idempotent op
-  // (discount, order)) zodat een rollback ook de redemption terugdraait.
+  // ── Optionele kortingscode ──
+  // Afwezig → discountTotal blijft '0'. Aanwezig → valideer in centen tegen het
+  // NETTO subtotaal; ongeldig = 400 (geen order). De redemption wordt BINNEN de
+  // order-tx geschreven (idempotent op (discount, order)) zodat een rollback ook
+  // de redemption terugdraait.
   let discountTotal = money(0);
   let appliedDiscount: { id: string; appliedCents: number; freeShipping: boolean } | null = null;
   if (input.discountCode) {
-    const subtotalCents = moneyToCents(subtotal);
     const shippingCents = moneyToCents(shippingTotal);
     const validation = await validateDiscountCode(input.discountCode, {
       shopId: shop.id,
-      subtotalCents,
+      subtotalCents: subtotalNetCents,
       currency: shop.currency,
       customerEmail: input.email,
       shippingCents,
@@ -286,9 +293,13 @@ export async function checkout(c: Context): Promise<Response> {
     };
   }
 
-  // grand_total = subtotaal + verzending − korting (nooit negatief).
-  const grandTotalRaw = Number(subtotal) + Number(shippingTotal) - Number(discountTotal);
-  const grandTotal = money(Math.max(0, grandTotalRaw));
+  // Totalen (alles in centen): grand_total = subtotal(netto) + btw + verzending −
+  // korting, nooit negatief.
+  const subtotal = money(centsToDecimal(subtotalNetCents));
+  const taxTotal = money(centsToDecimal(taxCents));
+  const grandCents =
+    subtotalNetCents + taxCents + moneyToCents(shippingTotal) - moneyToCents(discountTotal);
+  const grandTotal = money(centsToDecimal(Math.max(0, grandCents)));
 
   // ── Payment-provider resolutie (Wave-H A4) ──
   // Heeft deze shop een geconfigureerde PSP (bv. Mollie) + sleutel? Zo niet →
@@ -311,7 +322,10 @@ export async function checkout(c: Context): Promise<Response> {
           })
           .from(inventoryLevels)
           .where(eq(inventoryLevels.itemId, inv.itemId))
-          .orderBy(asc(inventoryLevels.id));
+          .orderBy(asc(inventoryLevels.id))
+          // Lock de voorraadrijen voor de duur van de tx → gelijktijdige
+          // checkouts op dezelfde variant serialiseren i.p.v. te oversellen.
+          .for('update');
         const totalAvailable = levels.reduce((acc, l) => acc + l.available, 0);
         if (totalAvailable < r.quantity) {
           throw new InsufficientStockError(r.variantId, totalAvailable, r.quantity);
@@ -542,7 +556,7 @@ export async function checkout(c: Context): Promise<Response> {
           currency: result.order.currency,
           description: `Order ${result.order.orderNumber}`,
           orderId: result.order.id,
-          redirectUrl: buildRedirectUrl(shop, result.order.orderNumber),
+          redirectUrl: buildRedirectUrl(c, shop, result.order.orderNumber),
           webhookUrl: buildWebhookUrl(paymentProvider.provider),
         });
 
@@ -662,26 +676,37 @@ function buildWebhookUrl(provider: string): string {
  * storefront-domein van de shop; valt dat weg, dan de geconfigureerde admin-URL.
  * Mollie vereist een absolute URL.
  */
-function buildRedirectUrl(shop: Shop, orderNumber: string): string {
-  const path = `/checkout/return?order=${encodeURIComponent(orderNumber)}`;
+function buildRedirectUrl(c: Context, shop: Shop, orderNumber: string): string {
+  // De terugkeerpagina heeft zowel het order-nummer als de shop nodig (de
+  // storefront-API is shop-scoped). Mollie redirect exact naar deze URL.
+  const path =
+    `/checkout/return?order=${encodeURIComponent(orderNumber)}` +
+    `&shop=${encodeURIComponent(shop.slug)}`;
+
+  // 1) Voorkeur: de origin van de storefront die de checkout deed. De browser
+  //    zet de Origin-header betrouwbaar → werkt overal (eigen domein, subdomein,
+  //    lokaal) zonder configuratie en kan niet naar een vreemde host wijzen.
+  const origin = c.req.header('origin');
+  if (origin && /^https?:\/\/[^/]+$/i.test(origin)) {
+    return `${origin.replace(/\/+$/, '')}${path}`;
+  }
+
+  // 2) Shop's eigen domein (headless/server-to-server zonder Origin-header).
   if (shop.domain && shop.domain.trim().length > 0) {
     return `https://${shop.domain.replace(/\/+$/, '')}${path}`;
   }
+
+  // 3) Laatste vangnet: de geconfigureerde admin/public-URL.
   const base = env.ADMIN_PUBLIC_URL.replace(/\/+$/, '');
   return `${base}${path}`;
 }
 
 /**
- * Per-shop oplopend order_number. Prefix uit shop.slug (eerste 2 letters,
- * uppercase) of 'OR'. We tellen bestaande orders van de shop +1001 als basis.
- * UNIQUE(shop_id, order_number) vangt races; retry tot 5x.
+ * Per-shop oplopend order_number (bv. 'CR-1001'). Delegeert aan de domein-helper
+ * die het hoogste bestaande suffix +1 neemt (max+1) i.p.v. count(*) — count gaf
+ * een fout/duplicaat volgnummer na een verwijderde order. Binnen de tx; de
+ * UNIQUE(shop_id, order_number)-constraint blijft het vangnet bij een race.
  */
 async function nextOrderNumber(tx: DbOrTx, shop: Shop): Promise<string> {
-  const prefix = (shop.slug.replace(/[^a-z0-9]/gi, '').slice(0, 2) || 'or').toUpperCase();
-  const rows = await tx
-    .select({ cnt: sql<number>`count(*)::int` })
-    .from(orders)
-    .where(eq(orders.shopId, shop.id));
-  const base = 1001 + Number(rows[0]?.cnt ?? 0);
-  return `${prefix}-${base}`;
+  return nextOrderNumberForShop(tx, shop.id, shop.slug);
 }

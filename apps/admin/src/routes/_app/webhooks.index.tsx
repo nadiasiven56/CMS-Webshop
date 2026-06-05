@@ -21,6 +21,7 @@ import {
 import { DeliveryDetailDrawer } from '@/components/webhooks/DeliveryDetailDrawer';
 import { TestFireModal } from '@/components/webhooks/TestFireModal';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ClickableRow } from '@/components/ui/ClickableRow';
 import { SkeletonTableRows } from '@/components/ui/Skeleton';
 import { formatRelative, formatDateTime, truncate } from '@/lib/format';
 
@@ -161,7 +162,11 @@ function WebhookDeliveriesPage() {
               </thead>
               <tbody>
                 {items.map((d) => (
-                  <tr key={d.id} onClick={() => setSelected(d)} style={{ cursor: 'pointer' }}>
+                  <ClickableRow
+                    key={d.id}
+                    onActivate={() => setSelected(d)}
+                    ariaLabel={`Open webhook-aflevering ${d.event}`}
+                  >
                     <td className="mono" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
                       {d.event}
                     </td>
@@ -216,7 +221,7 @@ function WebhookDeliveriesPage() {
                     >
                       {formatRelative(d.createdAt)}
                     </td>
-                  </tr>
+                  </ClickableRow>
                 ))}
               </tbody>
             </table>

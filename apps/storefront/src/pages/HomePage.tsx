@@ -1,9 +1,11 @@
+import { useMemo } from 'react';
 import { api } from '../api/client';
 import { useAsync } from '../lib/useAsync';
 import { CmsBlocks } from '../components/CmsBlocks';
 import { ProductCard } from '../components/ProductCard';
 import { ShopLink } from '../components/ShopLink';
 import { Spinner, ErrorState } from '../components/States';
+import { useDocumentHead } from '../lib/useDocumentHead';
 import { useShop } from '../state/ShopProvider';
 import type { CmsPageBlock } from '../api/types';
 
@@ -17,6 +19,33 @@ export function HomePage() {
     (signal) => api.listProducts({ limit: 4, sort: 'newest' }, signal),
     [],
   );
+
+  const shopName = shop?.name ?? 'Welkom';
+  const seo = homeQ.data?.page.seo ?? {};
+  const seoDescription =
+    (typeof seo.description === 'string' && seo.description.trim()
+      ? seo.description.trim()
+      : undefined) ??
+    `Ontdek het assortiment van ${shopName} — vers en met zorg samengesteld.`;
+  const orgJsonLd = useMemo(
+    () => ({
+      '@context': 'https://schema.org',
+      '@type': 'Organization',
+      name: shopName,
+      ...(shop?.supportEmail ? { email: shop.supportEmail } : {}),
+      ...(typeof window !== 'undefined' ? { url: window.location.origin } : {}),
+    }),
+    [shopName, shop?.supportEmail],
+  );
+
+  useDocumentHead({
+    title:
+      typeof seo.title === 'string' && seo.title.trim()
+        ? seo.title.trim()
+        : shopName,
+    description: seoDescription,
+    jsonLd: orgJsonLd,
+  });
 
   if (homeQ.loading) {
     return (

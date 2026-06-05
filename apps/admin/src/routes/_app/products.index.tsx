@@ -52,9 +52,7 @@ function ProductsPage() {
     }
     return 'cards';
   });
-  const [sort, setSort] = useState<'updated_desc' | 'title_asc' | 'price_asc' | 'price_desc'>(
-    'updated_desc',
-  );
+  const [sort, setSort] = useState<'updated_desc' | 'title_asc'>('updated_desc');
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -88,33 +86,35 @@ function ProductsPage() {
 
   const query = useProductList(params);
 
-  // Counts per status — voor V1: query "all" zonder filter
-  const allQuery = useProductList({ limit: 100, offset: 0 });
-  const counts = useMemo(() => {
-    const items = allQuery.data?.items ?? [];
-    return {
-      total: items.length,
-      active: items.filter((p) => p.status === 'active').length,
-      draft: items.filter((p) => p.status === 'draft').length,
-      archived: items.filter((p) => p.status === 'archived').length,
-    };
-  }, [allQuery.data]);
+  // Counts per status uit het ECHTE totaal (response.total honoreert de
+  // status-filter server-side). We vragen alleen het aantal op (limit 1) i.p.v.
+  // de eerste 100 items te tellen — anders klopt het niet bij >100 producten.
+  const totalQuery = useProductList({ limit: 1, offset: 0 });
+  const activeQuery = useProductList({ limit: 1, offset: 0, status: 'active' });
+  const draftQuery = useProductList({ limit: 1, offset: 0, status: 'draft' });
+  const archivedQuery = useProductList({ limit: 1, offset: 0, status: 'archived' });
+  const counts = useMemo(
+    () => ({
+      total: totalQuery.data?.total ?? 0,
+      active: activeQuery.data?.total ?? 0,
+      draft: draftQuery.data?.total ?? 0,
+      archived: archivedQuery.data?.total ?? 0,
+    }),
+    [totalQuery.data, activeQuery.data, draftQuery.data, archivedQuery.data],
+  );
 
   const total = query.data?.total ?? 0;
   const items = query.data?.items ?? [];
   const page = Math.floor(offset / PAGE_SIZE) + 1;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  // Optionally sort items client-side (mock-data layer doesn't support price-sort)
+  // Client-side sort op velden die ECHT in de ProductListItem-DTO zitten.
+  // (Prijs zit niet in de lijst-DTO, dus geen prijssort hier — dat zou een
+  // no-op `as any` zijn. Titel + updatedAt zijn altijd aanwezig.)
   const sortedItems = useMemo(() => {
     const list = [...items];
-    if (sort === 'title_asc') list.sort((a, b) => a.title.localeCompare(b.title));
-    else if (sort === 'price_asc' || sort === 'price_desc') {
-      list.sort((a, b) => {
-        const ap = (a as any).pricePrimary ?? 0;
-        const bp = (b as any).pricePrimary ?? 0;
-        return sort === 'price_asc' ? ap - bp : bp - ap;
-      });
+    if (sort === 'title_asc') {
+      list.sort((a, b) => a.title.localeCompare(b.title));
     } else {
       // updated_desc default
       list.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
@@ -180,13 +180,11 @@ function ProductsPage() {
         <select
           aria-label="Sortering"
           value={sort}
-          onChange={(e) => setSort(e.target.value as any)}
+          onChange={(e) => setSort(e.target.value as 'updated_desc' | 'title_asc')}
           style={{ padding: '6px 10px', fontSize: 12.5 }}
         >
           <option value="updated_desc">Recent bijgewerkt</option>
           <option value="title_asc">Titel A-Z</option>
-          <option value="price_asc">Prijs ↑</option>
-          <option value="price_desc">Prijs ↓</option>
         </select>
 
         <div className="segmented" aria-label="Weergave">

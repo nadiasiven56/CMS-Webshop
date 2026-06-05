@@ -36,6 +36,14 @@ async function tryReal<T>(fn: () => Promise<T>): Promise<{ ok: true; data: T } |
     return { ok: true, data };
   } catch (err) {
     const e = asApiError(err);
+    // Val ALLEEN terug op mock-data bij een netwerk-/server-storing:
+    //   status 0   → netwerkfout, CORS, timeout, geen verbinding
+    //   status>=500 → server-fout
+    // Bij een echte client-fout (4xx: 400/401/403/404/422/…) is mock-data
+    // misleidend — geef de fout door zodat de UI 'm correct kan tonen
+    // (bv. 401 → login-redirect, 404 → "niet gevonden").
+    const isInfraFailure = e.status === 0 || e.status >= 500;
+    if (!isInfraFailure) throw err;
     return { ok: false, reason: e.message };
   }
 }

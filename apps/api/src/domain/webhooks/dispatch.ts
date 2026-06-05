@@ -13,8 +13,11 @@
  * Dependency-free: global `fetch` + `AbortController` (Node 18+) + `node:crypto`
  * via {@link signPayload}.
  */
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { db } from '../../lib/db.js';
+import { env } from '../../lib/env.js';
 import { logger } from '../../lib/logger.js';
 import { webhooks, type Webhook } from '../../db/schema/webhooks.js';
 import { webhookDeliveries } from '../../db/schema/webhook-deliveries.js';
@@ -52,6 +55,99 @@ export interface DeliveryResult {
   errorMessage: string | null;
   /** id van de geschreven webhook_deliveries-rij (null als de log-insert faalde). */
   deliveryId: string | null;
+}
+
+// ─── SSRF-bescherming ────────────────────────────────────────
+//
+// Een webhook-URL is admin-opgegeven en wordt server-side ge-`fetch`-t. Zonder
+// guard kan een (gecompromitteerde of kwaadwillende) admin daarmee interne
+// diensten of cloud-metadata bereiken (SSRF). We weigeren daarom bestemmingen
+// die naar een NIET-publiek IP wijzen: loopback, link-local (incl. de cloud-
+// metadata 169.254.169.254), unique-local IPv6 en alle RFC1918-ranges. In
+// productie staan we bovendien alleen https toe. We resolven de hostname eerst
+// (DNS-rebinding-bestendig: we valideren het IP dat we daadwerkelijk benaderen)
+// en volgen geen redirects (manual) zodat een 30x niet stiekem naar intern wijst.
+
+/** Resultaat van een bestemmings-check. `ok:false` ⇒ niet afleveren. */
+interface DestinationCheck {
+  ok: boolean;
+  reason?: string;
+}
+
+/** True als een (genormaliseerd) IPv4/IPv6-adres in een private/onveilige range valt. */
+function isPrivateIp(ip: string): boolean {
+  const kind = isIP(ip);
+  if (kind === 4) {
+    const o = ip.split('.').map((n) => Number.parseInt(n, 10));
+    if (o.length !== 4 || o.some((n) => Number.isNaN(n))) return true; // onparsebaar ⇒ weiger
+    const [a, b] = o as [number, number, number, number];
+    if (a === 127) return true; // 127.0.0.0/8  loopback
+    if (a === 10) return true; // 10.0.0.0/8   RFC1918
+    if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12 RFC1918
+    if (a === 192 && b === 168) return true; // 192.168.0.0/16 RFC1918
+    if (a === 169 && b === 254) return true; // 169.254.0.0/16 link-local (cloud-metadata)
+    if (a === 0) return true; // 0.0.0.0/8     "this host"
+    if (a >= 224) return true; // multicast/reserved
+    return false;
+  }
+  if (kind === 6) {
+    const lower = ip.toLowerCase();
+    if (lower === '::1' || lower === '::') return true; // loopback / unspecified
+    if (lower.startsWith('fe80')) return true; // link-local
+    if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // unique-local (fc00::/7)
+    // IPv4-mapped IPv6 (::ffff:a.b.c.d) — valideer het ingebedde IPv4.
+    const mapped = lower.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if (mapped?.[1]) return isPrivateIp(mapped[1]);
+    return false;
+  }
+  // Geen geldig IP-literal — laat de hostname-resolutie het oordeel vellen.
+  return false;
+}
+
+/**
+ * Valideer een webhook-bestemming vóór aflevering. Resolveert de hostname en
+ * weigert elk niet-publiek IP. Gooit nooit — geeft `{ ok:false, reason }` terug.
+ */
+async function checkDestination(rawUrl: string): Promise<DestinationCheck> {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return { ok: false, reason: 'invalid_url' };
+  }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return { ok: false, reason: 'unsupported_protocol' };
+  }
+  // In productie: alleen TLS naar buiten.
+  if (env.NODE_ENV === 'production' && url.protocol !== 'https:') {
+    return { ok: false, reason: 'https_required_in_production' };
+  }
+
+  const host = url.hostname;
+  // Veelvoorkomende interne hostnames hard blokkeren (vóór DNS).
+  const lowerHost = host.toLowerCase();
+  if (lowerHost === 'localhost' || lowerHost.endsWith('.localhost') || lowerHost.endsWith('.internal')) {
+    return { ok: false, reason: 'internal_host' };
+  }
+
+  // Is de host al een IP-literal? Direct valideren.
+  if (isIP(host)) {
+    if (isPrivateIp(host)) return { ok: false, reason: 'private_ip' };
+    return { ok: true };
+  }
+
+  // Anders DNS resolven en ALLE resultaten checken (DNS-rebinding-bestendig).
+  try {
+    const records = await lookup(host, { all: true });
+    if (records.length === 0) return { ok: false, reason: 'dns_no_records' };
+    for (const r of records) {
+      if (isPrivateIp(r.address)) return { ok: false, reason: 'resolves_to_private_ip' };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: 'dns_lookup_failed' };
+  }
 }
 
 /**
@@ -129,29 +225,45 @@ async function deliverOne(
   let success = false;
   let errorMessage: string | null = null;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), DELIVERY_TIMEOUT_MS);
-  try {
-    const res = await fetch(target.url, {
-      method: 'POST',
-      headers,
-      body,
-      signal: controller.signal,
-    });
-    responseStatus = res.status;
-    success = res.ok; // 2xx
-    responseBody = truncate(await res.text().catch(() => null));
-    if (!success) {
-      errorMessage = `endpoint responded ${res.status}`;
+  // ─── SSRF-guard: weiger niet-publieke bestemmingen vóór de fetch ─────
+  const dest = await checkDestination(target.url);
+  if (!dest.ok) {
+    errorMessage = `blocked: ${dest.reason ?? 'unsafe_destination'}`;
+    logger.warn(
+      { webhookId: target.webhookId, url: target.url, event, reason: dest.reason },
+      'webhook delivery blocked (SSRF guard)',
+    );
+    // Schrijf nog steeds een delivery-log-rij (success:false) zodat de admin het
+    // ziet, maar doe geen netwerk-call. Val door naar de log-insert hieronder.
+  }
+
+  if (dest.ok) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DELIVERY_TIMEOUT_MS);
+    try {
+      const res = await fetch(target.url, {
+        method: 'POST',
+        headers,
+        body,
+        signal: controller.signal,
+        // Volg GEEN redirects: een 30x mag niet stiekem naar een interne host wijzen.
+        redirect: 'manual',
+      });
+      responseStatus = res.status;
+      success = res.ok; // 2xx
+      responseBody = truncate(await res.text().catch(() => null));
+      if (!success) {
+        errorMessage = `endpoint responded ${res.status}`;
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        errorMessage = `timeout after ${DELIVERY_TIMEOUT_MS}ms`;
+      } else {
+        errorMessage = err instanceof Error ? err.message : 'fetch failed';
+      }
+    } finally {
+      clearTimeout(timer);
     }
-  } catch (err) {
-    if (err instanceof Error && err.name === 'AbortError') {
-      errorMessage = `timeout after ${DELIVERY_TIMEOUT_MS}ms`;
-    } else {
-      errorMessage = err instanceof Error ? err.message : 'fetch failed';
-    }
-  } finally {
-    clearTimeout(timer);
   }
 
   const durationMs = Date.now() - started;

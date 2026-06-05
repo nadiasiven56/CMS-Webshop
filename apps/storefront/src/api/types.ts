@@ -171,6 +171,7 @@ export interface OrderResult {
     financialStatus: string;
     currency: string;
     subtotal: string;
+    discountTotal: string;
     shippingTotal: string;
     taxTotal: string;
     grandTotal: string;
@@ -181,8 +182,23 @@ export interface OrderResult {
   payment: {
     provider: string;
     status: string;
-    reference: string;
-    amount: string;
+    // Aanwezig in de mock-flow; afwezig bij een PSP-betaling.
+    reference?: string;
+    amount?: string;
+    // Aanwezig bij een PSP-flow (bv. Mollie): URL van de externe betaalpagina
+    // waar de klant naartoe geredirect moet worden. Null/afwezig = mock-flow.
+    checkoutUrl?: string | null;
+  };
+}
+
+/** Publieke order-/betaalstatus voor de PSP-terugkeerpagina. */
+export interface OrderStatusResponse {
+  order: {
+    orderNumber: string;
+    state: 'paid' | 'failed' | 'pending';
+    financialStatus: string;
+    currency: string;
+    grandTotal: string | null;
   };
 }
 
@@ -211,9 +227,13 @@ export interface CheckoutBody {
   lastName?: string;
   phone?: string;
   company?: string;
+  /** BTW-nummer (zakelijke bestelling). */
+  vatNumber?: string;
   acceptsMarketing?: boolean;
   note?: string;
   shippingAddress: CheckoutAddress;
   billingAddress?: CheckoutAddress;
   shippingTotal?: string;
+  /** Optionele kortingscode; door de backend gevalideerd. */
+  discountCode?: string;
 }

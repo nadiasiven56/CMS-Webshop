@@ -13,7 +13,7 @@
  */
 import type { Context } from 'hono';
 import { randomBytes } from 'node:crypto';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../lib/db.js';
 import {
@@ -39,12 +39,22 @@ function newToken(): string {
   return randomBytes(24).toString('base64url'); // ~32 chars, url-safe
 }
 
-/** Laad cart op token, scoped op shop. Null als niet gevonden / andere shop. */
+/**
+ * Laad cart op token, scoped op shop. Null als niet gevonden / andere shop /
+ * VERLOPEN (expiresAt in het verleden) — een verlopen cart mag niet meer
+ * gebruikt/afgerekend worden.
+ */
 async function loadCart(shopId: string, token: string): Promise<Cart | null> {
   const [cart] = await db
     .select()
     .from(carts)
-    .where(and(eq(carts.token, token), eq(carts.shopId, shopId)))
+    .where(
+      and(
+        eq(carts.token, token),
+        eq(carts.shopId, shopId),
+        or(isNull(carts.expiresAt), gt(carts.expiresAt, new Date())),
+      ),
+    )
     .limit(1);
   return cart ?? null;
 }

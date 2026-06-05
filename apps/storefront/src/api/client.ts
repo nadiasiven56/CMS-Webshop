@@ -19,6 +19,7 @@ import type {
   OrderResult,
   SortOption,
   CheckoutBody,
+  OrderStatusResponse,
 } from './types';
 
 const BASE = '/api/storefront/v1';
@@ -177,4 +178,10 @@ export const api = {
       method: 'POST',
       body,
     }),
+
+  getOrderStatus: (orderNumber: string, signal?: AbortSignal) =>
+    request<OrderStatusResponse>(
+      `/orders/${encodeURIComponent(orderNumber)}/status`,
+      { signal },
+    ),
 };

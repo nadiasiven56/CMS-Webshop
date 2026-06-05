@@ -23,6 +23,7 @@ import {
 } from '@/components/audit/api';
 import { AuditDetailDrawer } from '@/components/audit/AuditDetailDrawer';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ClickableRow } from '@/components/ui/ClickableRow';
 import { SkeletonTableRows } from '@/components/ui/Skeleton';
 import { formatRelative, formatDateTime, truncate } from '@/lib/format';
 
@@ -182,7 +183,11 @@ function AuditLogPage() {
               </thead>
               <tbody>
                 {items.map((e) => (
-                  <tr key={e.id} onClick={() => setSelected(e)} style={{ cursor: 'pointer' }}>
+                  <ClickableRow
+                    key={e.id}
+                    onActivate={() => setSelected(e)}
+                    ariaLabel={`Open audit-regel ${e.action} ${e.entityType}`}
+                  >
                     <td
                       style={{ fontSize: 12.5, color: 'var(--theme-muted)', whiteSpace: 'nowrap' }}
                       title={formatDateTime(e.createdAt)}
@@ -200,7 +205,7 @@ function AuditLogPage() {
                     <td className="mono" style={{ fontSize: 11.5, color: 'var(--theme-muted)' }}>
                       {e.ip ?? '—'}
                     </td>
-                  </tr>
+                  </ClickableRow>
                 ))}
               </tbody>
             </table>

@@ -4,19 +4,35 @@ import { api, ApiError } from '../api/client';
 import { ShopLink } from '../components/ShopLink';
 import { EmptyState, Spinner } from '../components/States';
 import { useCart, useCartToken } from '../state/CartProvider';
-import { formatMoney } from '../lib/format';
+import { useShop } from '../state/ShopProvider';
+import { formatMoneyIn } from '../lib/format';
 import { withShopQuery } from '../api/shop-context';
-import type { CheckoutBody } from '../api/types';
+import type { CheckoutBody, OrderResult } from '../api/types';
+
+/** EU-landen (ISO-3166-alpha2) voor de bezorgadres-select. */
+const COUNTRIES: { code: string; label: string }[] = [
+  { code: 'NL', label: 'Nederland' },
+  { code: 'BE', label: 'België' },
+  { code: 'DE', label: 'Duitsland' },
+  { code: 'FR', label: 'Frankrijk' },
+  { code: 'LU', label: 'Luxemburg' },
+  { code: 'AT', label: 'Oostenrijk' },
+  { code: 'ES', label: 'Spanje' },
+  { code: 'IT', label: 'Italië' },
+];
 
 interface FormState {
   email: string;
   firstName: string;
   lastName: string;
   phone: string;
+  company: string;
+  vatNumber: string;
   line1: string;
   postcode: string;
   city: string;
   country: string;
+  discountCode: string;
 }
 
 const EMPTY: FormState = {
@@ -24,10 +40,13 @@ const EMPTY: FormState = {
   firstName: '',
   lastName: '',
   phone: '',
+  company: '',
+  vatNumber: '',
   line1: '',
   postcode: '',
   city: '',
   country: 'NL',
+  discountCode: '',
 };
 
 function validate(f: FormState): Partial<Record<keyof FormState, string>> {
@@ -39,23 +58,30 @@ function validate(f: FormState): Partial<Record<keyof FormState, string>> {
   if (!f.line1.trim()) e.line1 = 'Straat + huisnummer verplicht';
   if (!f.postcode.trim()) e.postcode = 'Postcode verplicht';
   if (!f.city.trim()) e.city = 'Plaats verplicht';
-  if (f.country.trim().length !== 2) e.country = '2-letterige landcode';
+  if (f.country.trim().length !== 2) e.country = 'Kies een land';
   return e;
 }
 
 export function CheckoutPage() {
   const navigate = useNavigate();
   const { cart, loading, clearLocal } = useCart();
+  const { shop } = useShop();
   const token = useCartToken();
+  const locale = shop?.locale;
+  const currency = cart?.currency ?? shop?.currency;
 
   const [form, setForm] = useState<FormState>(EMPTY);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [showBusiness, setShowBusiness] = useState(false);
+  // Volledig besteloverzicht zodra de order is geplaatst (PSP-flow toont dit
+  // vóór de redirect; mock-flow gaat direct door naar /bedankt).
+  const [placed, setPlaced] = useState<OrderResult | null>(null);
 
   const set =
     (key: keyof FormState) =>
-    (e: React.ChangeEvent<HTMLInputElement>) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       setForm((f) => ({ ...f, [key]: e.target.value }));
 
   if (loading && !cart) {
@@ -83,6 +109,14 @@ export function CheckoutPage() {
     );
   }
 
+  const money = (v: string | number | null | undefined) =>
+    formatMoneyIn(v, locale, currency);
+
+  // Cart-subtotaal is BRUTO (incl. btw) — dat is het bedrag dat de klant nu ziet.
+  // Het volledige overzicht (netto-subtotaal, btw-split, korting, verzending)
+  // komt pas terug in de OrderResult na het plaatsen.
+  const cartSubtotal = cart?.subtotal ?? null;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setServerError(null);
@@ -90,25 +124,48 @@ export function CheckoutPage() {
     setErrors(v);
     if (Object.keys(v).length > 0) return;
 
+    const company = form.company.trim();
+    const vatNumber = form.vatNumber.trim();
+    const discountCode = form.discountCode.trim();
+
     const body: CheckoutBody = {
       email: form.email.trim(),
       firstName: form.firstName.trim(),
       lastName: form.lastName.trim(),
       phone: form.phone.trim() || undefined,
+      company: company || undefined,
+      vatNumber: vatNumber || undefined,
       acceptsMarketing: false,
+      ...(discountCode ? { discountCode } : {}),
       shippingAddress: {
         name: `${form.firstName} ${form.lastName}`.trim(),
+        company: company || undefined,
         line1: form.line1.trim(),
         postcode: form.postcode.trim(),
         city: form.city.trim(),
         country: form.country.trim().toUpperCase(),
+        phone: form.phone.trim() || undefined,
       },
     };
 
     setSubmitting(true);
     try {
       const result = await api.checkout(token, body);
-      // cart is server-side geleegd → lokale token weg.
+
+      // PSP-flow (bv. Mollie): de backend geeft een checkoutUrl terug → stuur de
+      // klant naar de externe betaalpagina. We mogen de cart NIET lokaal legen
+      // vóór de redirect: bij een geannuleerde/mislukte betaling moet de klant
+      // terug kunnen naar zijn winkelwagen. De order staat op "pending_payment";
+      // de PSP-webhook bevestigt 'm en Mollie redirect terug naar
+      // /checkout/return.
+      const checkoutUrl = result.payment?.checkoutUrl;
+      if (checkoutUrl) {
+        setPlaced(result); // toon bevestigd overzicht onder de redirect-knop
+        window.location.href = checkoutUrl;
+        return;
+      }
+
+      // Mock-flow: betaling is bevestigd (direct 'paid') → nú pas de cart legen.
       clearLocal();
       navigate(
         withShopQuery(
@@ -120,6 +177,11 @@ export function CheckoutPage() {
         setServerError(
           'Een van je producten is niet meer (volledig) op voorraad. Pas je winkelwagen aan.',
         );
+      } else if (err instanceof ApiError && err.code === 'invalid_discount') {
+        setServerError(
+          'De ingevoerde kortingscode is niet (meer) geldig. Controleer de code of laat hem leeg.',
+        );
+        setErrors((e) => ({ ...e, discountCode: 'Ongeldige code' }));
       } else if (err instanceof ApiError && err.code === 'invalid_request') {
         setServerError('Controleer je gegevens en probeer opnieuw.');
       } else {
@@ -129,6 +191,14 @@ export function CheckoutPage() {
       setSubmitting(false);
     }
   };
+
+  // Het uiteindelijke te-betalen bedrag: na plaatsing exact (order.grandTotal),
+  // anders het bruto cart-subtotaal (verzending/korting/btw rekenen we definitief
+  // op de server).
+  const payAmount = placed?.order.grandTotal ?? cartSubtotal;
+  const order = placed?.order;
+  const hasDiscount = order ? Number(order.discountTotal) > 0 : false;
+  const hasShipping = order ? Number(order.shippingTotal) > 0 : false;
 
   return (
     <div className="container">
@@ -143,6 +213,7 @@ export function CheckoutPage() {
                 id="email"
                 className="input"
                 type="email"
+                inputMode="email"
                 value={form.email}
                 onChange={set('email')}
                 autoComplete="email"
@@ -180,6 +251,8 @@ export function CheckoutPage() {
               <input
                 id="phone"
                 className="input"
+                type="tel"
+                inputMode="tel"
                 value={form.phone}
                 onChange={set('phone')}
                 autoComplete="tel"
@@ -205,6 +278,7 @@ export function CheckoutPage() {
               <input
                 id="postcode"
                 className="input"
+                inputMode="numeric"
                 value={form.postcode}
                 onChange={set('postcode')}
                 autoComplete="postal-code"
@@ -225,20 +299,60 @@ export function CheckoutPage() {
               {errors.city && <span className="field-error">{errors.city}</span>}
             </div>
             <div className="field">
-              <label htmlFor="country">Land (code) *</label>
-              <input
+              <label htmlFor="country">Land *</label>
+              <select
                 id="country"
-                className="input"
+                className="select"
                 value={form.country}
                 onChange={set('country')}
-                maxLength={2}
                 autoComplete="country"
-              />
+              >
+                {COUNTRIES.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
               {errors.country && (
                 <span className="field-error">{errors.country}</span>
               )}
             </div>
           </div>
+
+          {/* ── Zakelijke bestelling (optioneel) ── */}
+          <button
+            type="button"
+            className="btn-ghost"
+            style={{ marginTop: 16, paddingLeft: 0 }}
+            aria-expanded={showBusiness}
+            onClick={() => setShowBusiness((s) => !s)}
+          >
+            {showBusiness ? '− ' : '+ '}Zakelijke bestelling (bedrijfsnaam / btw)
+          </button>
+          {showBusiness && (
+            <div className="form-grid" style={{ marginTop: 8 }}>
+              <div className="field">
+                <label htmlFor="company">Bedrijfsnaam</label>
+                <input
+                  id="company"
+                  className="input"
+                  value={form.company}
+                  onChange={set('company')}
+                  autoComplete="organization"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="vatNumber">Btw-nummer</label>
+                <input
+                  id="vatNumber"
+                  className="input"
+                  value={form.vatNumber}
+                  onChange={set('vatNumber')}
+                  placeholder="NL000099998B57"
+                />
+              </div>
+            </div>
+          )}
 
           {serverError && (
             <div className="alert alert-error" style={{ marginTop: 16 }}>
@@ -252,15 +366,13 @@ export function CheckoutPage() {
             style={{ marginTop: 22 }}
             disabled={submitting}
           >
-            {submitting
-              ? 'Bestelling plaatsen…'
-              : `Betaal ${formatMoney(cart?.subtotal)}`}
+            {submitting ? 'Bestelling plaatsen…' : `Betaal ${money(payAmount)}`}
           </button>
-          <p
-            className="product-card__vendor"
-            style={{ marginTop: 10, textAlign: 'center' }}
-          >
-            Betaling via mock-provider — er wordt niets afgeschreven (demo).
+
+          {/* Trust: veilig betalen */}
+          <p className="checkout-trust" style={{ marginTop: 12 }}>
+            <span aria-hidden>🔒</span> Veilig betalen via een beveiligde
+            verbinding (SSL). Je gegevens worden versleuteld verstuurd.
           </p>
         </form>
 
@@ -271,13 +383,75 @@ export function CheckoutPage() {
               <span>
                 {line.quantity}× {line.title}
               </span>
-              <span>{formatMoney(line.lineTotal)}</span>
+              <span>{money(line.lineTotal)}</span>
             </div>
           ))}
-          <div className="summary-row total">
-            <span>Totaal</span>
-            <span>{formatMoney(cart?.subtotal)}</span>
+
+          <div className="summary-divider" />
+
+          {/* Vóór plaatsing tonen we het bruto cart-subtotaal; ná plaatsing het
+              volledige, definitieve overzicht uit de order. */}
+          {order ? (
+            <>
+              <div className="summary-row">
+                <span>Subtotaal (excl. btw)</span>
+                <span>{money(order.subtotal)}</span>
+              </div>
+              {hasDiscount && (
+                <div className="summary-row" style={{ color: 'var(--success)' }}>
+                  <span>Korting</span>
+                  <span>− {money(order.discountTotal)}</span>
+                </div>
+              )}
+              <div className="summary-row">
+                <span>Verzending</span>
+                <span>{hasShipping ? money(order.shippingTotal) : 'Gratis'}</span>
+              </div>
+              <div className="summary-row">
+                <span>Btw</span>
+                <span>{money(order.taxTotal)}</span>
+              </div>
+              <div className="summary-row total">
+                <span>Totaal</span>
+                <span>{money(order.grandTotal)}</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="summary-row">
+                <span>Subtotaal</span>
+                <span>{money(cartSubtotal)}</span>
+              </div>
+              <div className="summary-row summary-row--muted">
+                <span>Verzending &amp; btw</span>
+                <span>Berekend bij plaatsen</span>
+              </div>
+              <div className="summary-row total">
+                <span>Totaal</span>
+                <span>{money(cartSubtotal)}</span>
+              </div>
+            </>
+          )}
+
+          {/* ── Kortingscode ── */}
+          <div className="field" style={{ marginTop: 14 }}>
+            <label htmlFor="discountCode">Kortingscode (optioneel)</label>
+            <input
+              id="discountCode"
+              className="input"
+              value={form.discountCode}
+              onChange={set('discountCode')}
+              placeholder="Bijv. WELKOM10"
+              autoCapitalize="characters"
+            />
+            {errors.discountCode && (
+              <span className="field-error">{errors.discountCode}</span>
+            )}
+            <span className="product-card__vendor" style={{ marginTop: 4 }}>
+              De korting wordt verrekend bij het plaatsen van je bestelling.
+            </span>
           </div>
+
           <ShopLink
             to="/cart"
             className="btn btn-outline btn-block"
@@ -285,6 +459,18 @@ export function CheckoutPage() {
           >
             Wagen aanpassen
           </ShopLink>
+
+          {/* Demo-disclaimer: alleen in de mock-flow (geen echte PSP). Zodra een
+              PSP-betaling is gestart (checkoutUrl) is dit géén demo meer. */}
+          {!placed?.payment.checkoutUrl && (
+            <p
+              className="product-card__vendor"
+              style={{ marginTop: 12, textAlign: 'center' }}
+            >
+              Demo-omgeving: betaling via mock-provider — er wordt niets
+              afgeschreven.
+            </p>
+          )}
         </aside>
       </div>
     </div>
