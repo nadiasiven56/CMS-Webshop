@@ -265,6 +265,53 @@ export function useUpdateOrderStatus(orderId: string) {
   });
 }
 
+/**
+ * Bulk: markeer meerdere orders als verzonden via het bestaande per-order
+ * status-endpoint (PATCH /orders/:id/status). Statussen die niet naar
+ * 'shipped' mogen transitioneren worden overgeslagen (de state-machine in de
+ * backend zou ze toch weigeren). Resultaat = aantal geslaagd/overgeslagen.
+ *
+ * `paid` en `fulfilled` zijn de enige statussen die rechtstreeks naar
+ * 'shipped' mogen (zie status-machine), dus we filteren daarop client-side om
+ * onnodige 4xx-calls te vermijden.
+ */
+const SHIPPABLE_FROM = new Set(['paid', 'fulfilled']);
+
+export interface BulkShipResult {
+  ok: number;
+  skipped: number;
+  failed: number;
+}
+
+export function useBulkMarkShipped() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (
+      orders: Array<{ id: string; status: string }>,
+    ): Promise<BulkShipResult> => {
+      let ok = 0;
+      let skipped = 0;
+      let failed = 0;
+      for (const o of orders) {
+        if (!SHIPPABLE_FROM.has(o.status)) {
+          skipped++;
+          continue;
+        }
+        try {
+          await api.patch(`/orders/${o.id}/status`, { status: 'shipped' });
+          ok++;
+        } catch {
+          failed++;
+        }
+      }
+      return { ok, skipped, failed };
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ORDERS_QUERY_KEYS.all });
+    },
+  });
+}
+
 export interface CreateFulfillmentInput {
   locationId?: string | null;
   carrier?: string | null;

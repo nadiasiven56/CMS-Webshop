@@ -7,7 +7,7 @@
  */
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, Plus, ShoppingCart, Store } from 'lucide-react';
+import { Search, Plus, ShoppingCart, Store, Download, Truck, X } from 'lucide-react';
 import {
   ChannelPill,
   OrderStatusPill,
@@ -16,11 +16,19 @@ import {
 } from '@/components/orders/Pills';
 import { ShopPill } from '@/components/orders/ShopPill';
 import { CreateOrderDrawer } from '@/components/orders/CreateOrderDrawer';
-import { useOrderList, type OrderListFilters } from '@/components/orders/api';
+import {
+  useOrderList,
+  useBulkMarkShipped,
+  type OrderListFilters,
+  type OrderListItem,
+} from '@/components/orders/api';
 import { money } from '@/components/orders/money';
 import { useActiveShop } from '@/lib/shop-context';
 import { formatDateTime } from '@/lib/format';
+import { buildCsv, downloadBlob } from '@/lib/downloads';
+import { toast } from '@/lib/toast';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ClickableRow } from '@/components/ui/ClickableRow';
 import { SkeletonTableRows } from '@/components/ui/Skeleton';
 
 export const Route = createFileRoute('/_app/orders/')({
@@ -118,6 +126,100 @@ function OrdersPage() {
 
   const hasFilters = !!status || !!channel || !!search;
 
+  // ─── Rij-selectie + bulk-acties ──────────────────────────────
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const bulkShip = useBulkMarkShipped();
+
+  // Houd de selectie consistent met de zichtbare set (na filter/paginatie
+  // verwijderen we ids die niet meer in beeld zijn).
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const visible = new Set(items.map((o) => o.id));
+      const next = new Set<string>();
+      for (const id of prev) if (visible.has(id)) next.add(id);
+      return next.size === prev.size ? prev : next;
+    });
+  }, [items]);
+
+  const selectedOrders = useMemo(
+    () => items.filter((o) => selectedIds.has(o.id)),
+    [items, selectedIds],
+  );
+  const allOnPageSelected = items.length > 0 && items.every((o) => selectedIds.has(o.id));
+  const someSelected = selectedIds.size > 0;
+
+  function toggleOne(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAllOnPage() {
+    setSelectedIds((prev) => {
+      if (items.every((o) => prev.has(o.id))) {
+        // alles op deze pagina staat aan → uitzetten
+        const next = new Set(prev);
+        for (const o of items) next.delete(o.id);
+        return next;
+      }
+      const next = new Set(prev);
+      for (const o of items) next.add(o.id);
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  /** Exporteer de gegeven orders naar een CSV-bestand (client-side). */
+  function exportCsv(rows: OrderListItem[]) {
+    if (rows.length === 0) {
+      toast.info('Geen orders om te exporteren.');
+      return;
+    }
+    const csvRows = rows.map((o) => ({
+      order_nr: o.orderNumber,
+      datum: o.createdAt,
+      shop: shopNameById.get(o.shopId) ?? o.shopId,
+      kanaal: o.channel,
+      klant: o.customerName ?? '',
+      email: o.email ?? '',
+      items: o.itemCount,
+      totaal: o.grandTotal ?? '',
+      valuta: o.currency,
+      status: o.status,
+      betaling: o.financialStatus,
+      fulfilment: o.fulfillmentStatus,
+    }));
+    const csv = buildCsv(csvRows, [
+      'order_nr', 'datum', 'shop', 'kanaal', 'klant', 'email',
+      'items', 'totaal', 'valuta', 'status', 'betaling', 'fulfilment',
+    ]);
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadBlob(`orders-${stamp}.csv`, '﻿' + csv, 'text/csv;charset=utf-8');
+    toast.success(`${rows.length} order(s) geëxporteerd naar CSV.`);
+  }
+
+  async function onBulkShip() {
+    if (selectedOrders.length === 0) return;
+    const res = await bulkShip.mutateAsync(
+      selectedOrders.map((o) => ({ id: o.id, status: o.status })),
+    );
+    const parts: string[] = [];
+    if (res.ok > 0) parts.push(`${res.ok} verzonden`);
+    if (res.skipped > 0) parts.push(`${res.skipped} overgeslagen (verkeerde status)`);
+    if (res.failed > 0) parts.push(`${res.failed} mislukt`);
+    const msg = parts.join(' · ') || 'Geen wijzigingen';
+    if (res.failed > 0) toast.error(msg);
+    else toast.success(msg);
+    clearSelection();
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -132,15 +234,27 @@ function OrdersPage() {
               : 'Orders van de gekozen shop — eigen webshop en marktplaats-kanalen.'}
           </p>
         </div>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => setCreateOpen(true)}
-          disabled={!activeShopId}
-        >
-          <Plus size={15} strokeWidth={2.2} />
-          Handmatige order
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => exportCsv(items)}
+            disabled={items.length === 0}
+            title="Exporteer de getoonde orders naar CSV"
+          >
+            <Download size={15} strokeWidth={2} />
+            Exporteer CSV
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setCreateOpen(true)}
+            disabled={!activeShopId}
+          >
+            <Plus size={15} strokeWidth={2.2} />
+            Handmatige order
+          </button>
+        </div>
       </div>
 
       {/* Toolbar: shop-scope + search + status-tabs */}
@@ -255,10 +369,63 @@ function OrdersPage() {
         />
       ) : (
         <div className="table-wrap">
+          {/* Bulk-actiebalk — verschijnt zodra er rijen geselecteerd zijn */}
+          {someSelected && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '10px 14px',
+                borderBottom: '1px solid var(--border-default)',
+                background: 'var(--theme-accent-subtle)',
+                flexWrap: 'wrap',
+              }}
+            >
+              <span style={{ fontSize: 13, fontWeight: 600 }}>
+                {selectedIds.size} geselecteerd
+              </span>
+              <div style={{ flex: 1 }} />
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => exportCsv(selectedOrders)}
+              >
+                <Download size={13} /> Exporteer CSV
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => void onBulkShip()}
+                disabled={bulkShip.isPending}
+              >
+                <Truck size={13} /> {bulkShip.isPending ? 'Bezig…' : 'Markeer verzonden'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={clearSelection}
+                aria-label="Selectie wissen"
+              >
+                <X size={13} /> Wissen
+              </button>
+            </div>
+          )}
           <div style={{ overflowX: 'auto' }}>
             <table className="table">
               <thead>
                 <tr>
+                  <th style={{ width: 36, textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      aria-label="Selecteer alle orders op deze pagina"
+                      checked={allOnPageSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = someSelected && !allOnPageSelected;
+                      }}
+                      onChange={toggleAllOnPage}
+                    />
+                  </th>
                   <th>Order</th>
                   {allShops && <th>Shop</th>}
                   <th>Datum</th>
@@ -273,11 +440,22 @@ function OrdersPage() {
               </thead>
               <tbody>
                 {items.map((o) => (
-                  <tr
+                  <ClickableRow
                     key={o.id}
-                    onClick={() => void navigate({ to: '/orders/$id', params: { id: o.id } })}
-                    style={{ cursor: 'pointer' }}
+                    onActivate={() => void navigate({ to: '/orders/$id', params: { id: o.id } })}
+                    ariaLabel={`Open order ${o.orderNumber}`}
                   >
+                    <td
+                      style={{ textAlign: 'center' }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        aria-label={`Selecteer order ${o.orderNumber}`}
+                        checked={selectedIds.has(o.id)}
+                        onChange={() => toggleOne(o.id)}
+                      />
+                    </td>
                     <td>
                       <span
                         className="mono"
@@ -303,7 +481,7 @@ function OrdersPage() {
                     <td><OrderStatusPill status={o.status} /></td>
                     <td><FinancialStatusPill status={o.financialStatus} /></td>
                     <td><FulfillmentStatusPill status={o.fulfillmentStatus} /></td>
-                  </tr>
+                  </ClickableRow>
                 ))}
               </tbody>
             </table>
