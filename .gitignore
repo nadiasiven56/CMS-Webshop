@@ -34,9 +34,9 @@ Thumbs.db
 .idea/
 *.swp
 
-# Backups van finalize-passes
-.pre-finalize.bak/
-*.pre-finalize.bak
+# Backups van rewrite-/finalize-passes (debris — hoort niet in de repo)
+*.bak
+*.pre-finalize.bak/
 
 # Drizzle
 apps/api/drizzle/meta/_journal.json.backup

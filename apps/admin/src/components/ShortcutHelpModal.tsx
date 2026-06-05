@@ -6,10 +6,11 @@ import { Modal } from './ui/Modal';
 import { useKeyboardShortcuts } from '@/lib/use-keyboard-shortcuts';
 
 const SHORTCUTS: Array<{ keys: string[]; desc: string; group: string }> = [
+  { keys: ['Ctrl', 'K'], desc: 'Snelzoeken / navigeren', group: 'Algemeen' },
   { keys: ['?'], desc: 'Toon shortcuts', group: 'Algemeen' },
-  { keys: ['Esc'], desc: 'Sluit drawer/modal', group: 'Algemeen' },
+  { keys: ['Esc'], desc: 'Sluit drawer/modal/overlay', group: 'Algemeen' },
   { keys: ['Ctrl', 'S'], desc: 'Opslaan in actieve form', group: 'Algemeen' },
-  { keys: ['/'], desc: 'Focus zoek-veld', group: 'Lijsten' },
+  { keys: ['/'], desc: 'Open snelzoeken', group: 'Lijsten' },
   { keys: ['n'], desc: 'Nieuwe entiteit op lijst-pagina', group: 'Lijsten' },
 ];
 

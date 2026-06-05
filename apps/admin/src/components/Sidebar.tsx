@@ -1,127 +1,7 @@
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
-import {
-  LayoutDashboard,
-  Package,
-  Boxes,
-  ListTree,
-  Settings,
-  LogOut,
-  ShoppingCart,
-  Users,
-  Undo2,
-  MapPin,
-  ClipboardList,
-  Truck,
-  Globe,
-  BarChart3,
-  Receipt,
-  BookOpenCheck,
-  Store,
-  FileText,
-  Newspaper,
-  Menu,
-  Image as ImageIcon,
-  Star,
-  Webhook,
-  ScrollText,
-  Mail,
-  Percent,
-  Megaphone,
-} from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import { useAuth, useLogout } from '@/lib/auth';
-
-interface NavItem {
-  label: string;
-  to: string;
-  icon: LucideIcon;
-}
-
-interface NavSection {
-  label?: string;
-  items: NavItem[];
-}
-
-const SECTIONS: NavSection[] = [
-  {
-    items: [
-      { label: 'Dashboard', to: '/', icon: LayoutDashboard },
-      { label: 'Shops', to: '/shops', icon: Store },
-    ],
-  },
-  {
-    label: 'Content',
-    items: [
-      { label: "Pagina's", to: '/cms/pages', icon: FileText },
-      { label: 'Blog', to: '/cms/blog', icon: Newspaper },
-      { label: "Menu's", to: '/cms/menus', icon: Menu },
-      { label: 'Media', to: '/cms/media', icon: ImageIcon },
-    ],
-  },
-  {
-    label: 'Verkoop',
-    items: [
-      { label: 'Orders', to: '/orders', icon: ShoppingCart },
-      { label: 'Klanten', to: '/customers', icon: Users },
-      { label: 'Retouren', to: '/returns', icon: Undo2 },
-      { label: 'Reviews', to: '/reviews', icon: Star },
-    ],
-  },
-  {
-    label: 'Catalogus',
-    items: [{ label: 'Producten', to: '/products', icon: Package }],
-  },
-  {
-    label: 'Operations',
-    items: [
-      { label: 'Voorraad', to: '/stock', icon: Boxes },
-      { label: 'Movements', to: '/movements', icon: ListTree },
-      { label: 'Locaties', to: '/locations', icon: MapPin },
-      { label: 'Inkoop', to: '/purchase-orders', icon: ClipboardList },
-      { label: 'Leveranciers', to: '/suppliers', icon: Truck },
-      { label: 'Verzending', to: '/shipping', icon: Truck },
-    ],
-  },
-  {
-    label: 'Kanalen',
-    items: [{ label: 'Verkoop-kanalen', to: '/channels', icon: Globe }],
-  },
-  {
-    label: 'Financieel',
-    items: [
-      { label: 'Financieel', to: '/finance', icon: BarChart3 },
-      { label: 'Boekhouding', to: '/accounting', icon: Receipt },
-      { label: 'Boekhoud-koppeling', to: '/accounting/koppelingen', icon: Receipt },
-      { label: 'Grootboek', to: '/ledger', icon: BookOpenCheck },
-    ],
-  },
-  {
-    label: 'Marketing',
-    items: [
-      { label: 'Marketing', to: '/marketing', icon: Megaphone },
-      { label: 'Kortingen', to: '/discounts', icon: Percent },
-    ],
-  },
-  {
-    label: 'Analytics',
-    items: [{ label: 'Statistieken', to: '/analytics', icon: BarChart3 }],
-  },
-  {
-    label: 'Communicatie',
-    items: [{ label: 'E-mail', to: '/notifications', icon: Mail }],
-  },
-  {
-    label: 'Systeem',
-    items: [
-      { label: 'Webhook-log', to: '/webhooks', icon: Webhook },
-      { label: 'Audit-log', to: '/audit-log', icon: ScrollText },
-    ],
-  },
-  {
-    label: 'Account',
-    items: [{ label: 'Settings', to: '/settings', icon: Settings }],
-  },
-];
+import { NAV_SECTIONS } from '@/lib/nav-items';
 
 function isActive(pathname: string, to: string): boolean {
   if (to === '/') return pathname === '/';
@@ -150,7 +30,7 @@ export function Sidebar() {
       </div>
 
       <nav aria-label="Hoofdnavigatie">
-        {SECTIONS.map((section, si) => (
+        {NAV_SECTIONS.map((section, si) => (
           <div key={si}>
             {section.label && <div className="nav-section-label">{section.label}</div>}
             {section.items.map((item) => {

@@ -1,7 +1,9 @@
+import { useEffect, useRef, useState } from 'react';
 import { useRouterState, Link } from '@tanstack/react-router';
 import { Bell, Search, LayoutGrid } from 'lucide-react';
 import { DEMO_MODE } from '@/lib/api-with-fallback';
 import { ShopSwitcher } from '@/components/ShopSwitcher';
+import { openCommandPalette } from '@/components/CommandPalette';
 
 interface RouteMeta {
   title: string;
@@ -52,7 +54,12 @@ export function TopBar() {
         </Link>
         <ShopSwitcher />
 
-        <button type="button" className="topbar-search" aria-label="Search">
+        <button
+          type="button"
+          className="topbar-search"
+          aria-label="Zoeken (Ctrl K)"
+          onClick={() => openCommandPalette()}
+        >
           <Search size={14} />
           <span>Zoeken…</span>
           <kbd>Ctrl K</kbd>
@@ -60,11 +67,77 @@ export function TopBar() {
 
         {DEMO_MODE && <span className="demo-pill">Demo Mode</span>}
 
-        <button type="button" className="icon-btn" aria-label="Notifications" title="3 ongelezen">
-          <Bell size={16} />
-          <span className="notification-dot" />
-        </button>
+        <NotificationBell />
       </div>
     </header>
+  );
+}
+
+/**
+ * Notificatie-bel met een eenvoudige dropdown. We tonen GEEN fake "3 ongelezen"
+ * meer (er is nog geen echte notificatie-feed). De dropdown legt dat eerlijk uit
+ * en wijst door naar de e-mail-/webhook-pagina's. Zodra er een echte feed is,
+ * kan deze lijst gevuld worden zonder de UI te wijzigen.
+ */
+function NotificationBell() {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Sluit bij klik buiten of Escape.
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="notif-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className="icon-btn"
+        aria-label="Notificaties"
+        aria-haspopup="true"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Bell size={16} />
+      </button>
+      {open && (
+        <div className="notif-panel" role="dialog" aria-label="Notificaties">
+          <div className="notif-head">
+            <span>Notificaties</span>
+          </div>
+          <div className="notif-empty">
+            Geen nieuwe notificaties.
+            <div style={{ marginTop: 10, display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Link
+                to="/notifications"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setOpen(false)}
+              >
+                E-mail
+              </Link>
+              <Link
+                to="/webhooks"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setOpen(false)}
+              >
+                Webhook-log
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
