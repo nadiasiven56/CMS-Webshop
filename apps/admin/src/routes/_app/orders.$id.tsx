@@ -252,9 +252,14 @@ function OrderDetailPage() {
                 )}
                 {order.customer?.phone && <div className="muted">{order.customer.phone}</div>}
                 {order.customerId && (
-                  <a href={`/customers/${order.customerId}`} className="btn btn-ghost btn-sm" style={{ justifyContent: 'flex-start', marginTop: 8 }}>
+                  <Link
+                    to="/customers/$id"
+                    params={{ id: order.customerId }}
+                    className="btn btn-ghost btn-sm"
+                    style={{ justifyContent: 'flex-start', marginTop: 8 }}
+                  >
                     Bekijk klant-profiel →
-                  </a>
+                  </Link>
                 )}
               </div>
             ) : (

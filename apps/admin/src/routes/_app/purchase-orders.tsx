@@ -10,6 +10,7 @@ import { useMemo, useState } from 'react';
 import { Plus, FileText, Truck, AlertCircle } from 'lucide-react';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ClickableRow } from '@/components/ui/ClickableRow';
 import { PoStatusPill, PO_STATUS_TABS } from '@/components/purchasing/poStatus';
 import { PoCreateDrawer } from '@/components/purchasing/PoCreateDrawer';
 import { PoDetailDrawer } from '@/components/purchasing/PoDetailDrawer';
@@ -147,7 +148,11 @@ function PurchaseOrdersPage() {
               </thead>
               <tbody>
                 {pos.map((p) => (
-                  <tr key={p.id} onClick={() => setActivePoId(p.id)} style={{ cursor: 'pointer' }}>
+                  <ClickableRow
+                    key={p.id}
+                    onActivate={() => setActivePoId(p.id)}
+                    ariaLabel={`Open inkooporder ${p.reference ?? p.id.slice(0, 8)}`}
+                  >
                     <td className="mono" style={{ fontWeight: 600, color: 'var(--theme-accent)' }}>
                       {p.reference ?? p.id.slice(0, 8)}
                     </td>
@@ -161,7 +166,7 @@ function PurchaseOrdersPage() {
                       {formatMoney(Number(p.total))}
                     </td>
                     <td><PoStatusPill status={p.status} /></td>
-                  </tr>
+                  </ClickableRow>
                 ))}
               </tbody>
             </table>

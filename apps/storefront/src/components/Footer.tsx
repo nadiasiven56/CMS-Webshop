@@ -25,6 +25,7 @@ export function Footer() {
             <h4>Shop</h4>
             <ShopLink to="/shop">Alle producten</ShopLink>
             <ShopLink to="/cart">Winkelwagen</ShopLink>
+            <ShopLink to="/volg-bestelling">Bestelling volgen</ShopLink>
             <ShopLink to="/blog">Blog</ShopLink>
           </div>
           <div>
@@ -33,6 +34,12 @@ export function Footer() {
             {shop?.supportEmail && (
               <a href={`mailto:${shop.supportEmail}`}>Klantenservice</a>
             )}
+          </div>
+          <div>
+            <h4>Voorwaarden</h4>
+            <ShopLink to="/pagina/verzending">Verzending &amp; levering</ShopLink>
+            <ShopLink to="/pagina/retourneren">Retourbeleid</ShopLink>
+            <ShopLink to="/pagina/privacy">Privacybeleid</ShopLink>
           </div>
         </div>
         <div className="footer-bottom">

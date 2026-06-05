@@ -37,6 +37,7 @@ import { Drawer } from '@/components/ui/Drawer';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { FormField } from '@/components/ui/FormField';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ClickableRow } from '@/components/ui/ClickableRow';
 import { SkeletonTableRows } from '@/components/ui/Skeleton';
 import { toast } from '@/lib/toast';
 import { asApiError } from '@/lib/api';
@@ -233,10 +234,10 @@ function ReturnsPage() {
               </thead>
               <tbody>
                 {filtered.map((r) => (
-                  <tr
+                  <ClickableRow
                     key={r.id}
-                    onClick={() => { setActiveReturnId(r.id); setEditMode(false); }}
-                    style={{ cursor: 'pointer' }}
+                    onActivate={() => { setActiveReturnId(r.id); setEditMode(false); }}
+                    ariaLabel={`Open retour ${shortRma(r.id)}`}
                   >
                     <td className="mono" style={{ fontWeight: 600, color: 'var(--theme-accent)' }}>
                       {shortRma(r.id)}
@@ -257,7 +258,7 @@ function ReturnsPage() {
                       <div style={{ fontSize: 12.5 }}>{formatDate(r.createdAt)}</div>
                       <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{formatRelative(r.createdAt)}</div>
                     </td>
-                  </tr>
+                  </ClickableRow>
                 ))}
               </tbody>
             </table>

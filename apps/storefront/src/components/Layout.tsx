@@ -31,8 +31,11 @@ export function Layout() {
 
   return (
     <>
+      <a href="#main-content" className="skip-link">
+        Ga naar inhoud
+      </a>
       <Header />
-      <main>
+      <main id="main-content">
         <Outlet />
       </main>
       <Footer />

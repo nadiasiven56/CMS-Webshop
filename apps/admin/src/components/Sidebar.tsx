@@ -149,26 +149,29 @@ export function Sidebar() {
         <span className="brand-version">v0.1</span>
       </div>
 
-      {SECTIONS.map((section, si) => (
-        <div key={si}>
-          {section.label && <div className="nav-section-label">{section.label}</div>}
-          {section.items.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(pathname, item.to);
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                className="nav-link"
-                data-active={active}
-              >
-                <Icon size={15} strokeWidth={1.8} />
-                <span>{item.label}</span>
-              </Link>
-            );
-          })}
-        </div>
-      ))}
+      <nav aria-label="Hoofdnavigatie">
+        {SECTIONS.map((section, si) => (
+          <div key={si}>
+            {section.label && <div className="nav-section-label">{section.label}</div>}
+            {section.items.map((item) => {
+              const Icon = item.icon;
+              const active = isActive(pathname, item.to);
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  className="nav-link"
+                  data-active={active}
+                  aria-current={active ? 'page' : undefined}
+                >
+                  <Icon size={15} strokeWidth={1.8} />
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
 
       <div className="sidebar-bottom">
         <div className="user-pill" title={email}>

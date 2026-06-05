@@ -49,6 +49,31 @@ a {
   text-decoration: none;
 }
 
+/* ── Toegankelijkheid ────────────────────────────────── */
+/* Zichtbare focus-ring voor toetsenbord-navigatie (niet bij muis-klik). */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Skip-link: verborgen tot hij focus krijgt (toetsenbord). */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 200;
+  background: var(--brand-primary);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 0 0 var(--radius-sm) 0;
+  font-weight: 600;
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+  left: 0;
+}
+
 img {
   display: block;
   max-width: 100%;
@@ -545,6 +570,59 @@ h3 {
   padding-top: 14px;
   margin-top: 14px;
 }
+.summary-row--muted {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+.summary-divider {
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
+}
+
+/* ── Checkout-trust + tracking ───────────────────────── */
+.checkout-trust {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+.return-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.tracking-page {
+  max-width: 640px;
+  margin: 0 auto 56px;
+}
+.tracking-form {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin: 20px 0;
+}
+.tracking-result {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-muted);
+  padding: 22px;
+  margin-top: 20px;
+}
+.tracking-result__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+.tracking-result__icon {
+  font-size: 2rem;
+  line-height: 1;
+}
 
 /* ── Forms (checkout) ───────────────────────────────── */
 .form-grid {
@@ -743,7 +821,7 @@ h3 {
 }
 .footer-cols {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr;
   gap: 32px;
 }
 .footer-cols h4 {

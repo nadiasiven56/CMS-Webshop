@@ -16,6 +16,7 @@ import { useMemo, useState } from 'react';
 import { ChevronLeft, Download, FileText, Receipt } from 'lucide-react';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ClickableRow } from '@/components/ui/ClickableRow';
 import { InvoiceDrawer } from '@/components/finance/InvoiceDrawer';
 import {
   useInvoices,
@@ -233,7 +234,11 @@ function AccountingPage() {
               </thead>
               <tbody>
                 {items.map((inv) => (
-                  <tr key={inv.id} onClick={() => setSelected(inv)} style={{ cursor: 'pointer' }}>
+                  <ClickableRow
+                    key={inv.id}
+                    onActivate={() => setSelected(inv)}
+                    ariaLabel={`Open factuur ${inv.invoiceNumber}`}
+                  >
                     <td className="mono" style={{ fontSize: 12, color: 'var(--theme-accent)', whiteSpace: 'nowrap' }}>
                       {inv.invoiceNumber}
                     </td>
@@ -265,7 +270,7 @@ function AccountingPage() {
                         <span className="muted" style={{ fontSize: 11 }}>—</span>
                       )}
                     </td>
-                  </tr>
+                  </ClickableRow>
                 ))}
               </tbody>
             </table>

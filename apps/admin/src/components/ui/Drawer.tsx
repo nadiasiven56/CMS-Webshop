@@ -1,5 +1,6 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
+import { useFocusTrap } from '@/lib/use-focus-trap';
 
 export interface DrawerProps {
   open: boolean;
@@ -12,6 +13,9 @@ export interface DrawerProps {
 }
 
 export function Drawer({ open, onClose, title, subtitle, width, footer, children }: DrawerProps) {
+  const panelRef = useRef<HTMLElement>(null);
+  const titleId = useId();
+
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -26,6 +30,10 @@ export function Drawer({ open, onClose, title, subtitle, width, footer, children
     };
   }, [open, onClose]);
 
+  // Focus-trap: Tab cyclet binnen de drawer, initiële focus naar 1e control,
+  // focus terug naar trigger bij sluiten.
+  useFocusTrap(panelRef, open);
+
   if (!open) return null;
 
   return (
@@ -36,9 +44,11 @@ export function Drawer({ open, onClose, title, subtitle, width, footer, children
         aria-hidden="true"
       />
       <aside
+        ref={panelRef}
         className="drawer"
         role="dialog"
         aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
         style={width ? { width } : undefined}
       >
         {(title || subtitle) && (
@@ -46,6 +56,7 @@ export function Drawer({ open, onClose, title, subtitle, width, footer, children
             <div style={{ minWidth: 0 }}>
               {title && (
                 <h2
+                  id={titleId}
                   style={{
                     margin: 0,
                     fontSize: 16,

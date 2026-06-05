@@ -1,0 +1,41 @@
+# ─────────────────────────────────────────────────────────────
+# Caddy = één publieke origin voor de hele CRM.
+#   - serveert de admin-SPA (static) op /
+#   - proxyt /api/*, /storage/* en /health naar de api-container
+# Dat houdt de sessie-cookie same-origin (geen CORS/SameSite-gedoe) en
+# levert automatisch HTTPS zodra SITE_ADDRESS een echt domein is.
+#
+# SITE_ADDRESS:
+#   - productie met domein:  https://crm.jouwdomein.nl   (auto-TLS via Let's Encrypt)
+#   - lokaal / achter andere proxy:  :80                  (geen TLS)
+# API_UPSTREAM: interne adres van de api-service (compose: api:7300).
+# ─────────────────────────────────────────────────────────────
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	# ─── Security-response-headers (defense-in-depth naast de API) ─────
+	# Gelden voor ALLE responses (static admin-SPA én geproxyde API).
+	header {
+		# HSTS: forceer HTTPS 1 jaar incl. subdomeinen. Onschadelijk op :80
+		# (browsers negeren HSTS over plain HTTP); actief zodra je via https serveert.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Verberg server-fingerprint.
+		-Server
+	}
+
+	# Backend-paden naar de API-container.
+	@backend path /api/* /storage/* /health /health/*
+	handle @backend {
+		reverse_proxy {$API_UPSTREAM:api:7300}
+	}
+
+	# Admin SPA met client-side-routing fallback naar index.html.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

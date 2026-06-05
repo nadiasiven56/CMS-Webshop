@@ -13,6 +13,39 @@ const WebhookEventSchema = z.enum(
   WEBHOOK_EVENTS as unknown as [WebhookEvent, ...WebhookEvent[]],
 );
 
+/**
+ * Lichte URL-vorm-validatie voor webhook-targets: alleen http(s) en geen
+ * overduidelijk-interne hostnames. Dit is een EERSTE filter; de echte SSRF-
+ * bescherming (DNS-resolutie + private-IP-check) zit in
+ * `domain/webhooks/dispatch.ts` (checkDestination) en geldt voor ALLE
+ * afleveringen — niet alleen test-fires.
+ */
+function isPlausibleWebhookUrl(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+  const host = url.hostname.toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.internal')) {
+    return false;
+  }
+  // Kale loopback/link-local IP-literals meteen weren.
+  if (host === '127.0.0.1' || host === '::1' || host.startsWith('169.254.')) return false;
+  return true;
+}
+
+const WebhookTargetUrlSchema = z
+  .string()
+  .trim()
+  .url()
+  .max(2048)
+  .refine(isPlausibleWebhookUrl, {
+    message: 'url must be a public http(s) endpoint (no localhost/internal hosts)',
+  });
+
 /** GET /deliveries — filter + paginate. */
 export const DeliveryListQuerySchema = z.object({
   webhook_id: z.string().uuid().optional(),
@@ -36,7 +69,7 @@ export const TestFireSchema = z
   .object({
     webhookId: z.string().uuid().optional(),
     event: WebhookEventSchema.optional(),
-    url: z.string().trim().url().max(2048).optional(),
+    url: WebhookTargetUrlSchema.optional(),
     secret: z.string().trim().min(1).max(255).optional(),
     /** Optionele override van de sample-data; default een klein voorbeeld. */
     data: z.record(z.unknown()).optional(),

@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { ShopLink } from './ShopLink';
 import { ProductCard } from './ProductCard';
 import { api } from '../api/client';
+import { sanitizeHtml } from '../lib/sanitize';
 import type { CmsPageBlock, ProductListItem } from '../api/types';
 
 function HeroBlock({ block }: { block: CmsPageBlock }) {
@@ -32,8 +33,9 @@ function RichtextBlock({ block }: { block: CmsPageBlock }) {
     <section className="section">
       <div
         className="richtext"
-        // CMS-content is door de shop-eigenaar beheerd (vertrouwd).
-        dangerouslySetInnerHTML={{ __html: html }}
+        // CMS-content is door de shop-eigenaar beheerd, maar we saneren altijd
+        // aan de renderkant tegen XSS (zie lib/sanitize).
+        dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
       />
     </section>
   );

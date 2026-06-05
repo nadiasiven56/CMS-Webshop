@@ -20,6 +20,7 @@ import {
 import { CustomerDrawer } from '@/components/customers/CustomerDrawer';
 import { useActiveShop } from '@/lib/shop-context';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ClickableRow } from '@/components/ui/ClickableRow';
 import { SkeletonTableRows } from '@/components/ui/Skeleton';
 import { formatMoney, formatRelative, initials } from '@/lib/format';
 
@@ -167,10 +168,10 @@ function CustomersPage() {
                   const name = customerName(c);
                   const b2b = isB2B(c);
                   return (
-                    <tr
+                    <ClickableRow
                       key={c.id}
-                      onClick={() => openDetail(c)}
-                      style={{ cursor: 'pointer' }}
+                      onActivate={() => openDetail(c)}
+                      ariaLabel={`Open klant ${name}`}
                     >
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -246,7 +247,7 @@ function CustomersPage() {
                           {formatRelative(c.createdAt)}
                         </div>
                       </td>
-                    </tr>
+                    </ClickableRow>
                   );
                 })}
               </tbody>

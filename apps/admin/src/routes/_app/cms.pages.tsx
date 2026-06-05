@@ -18,6 +18,7 @@ import { Drawer } from '@/components/ui/Drawer';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { FormField } from '@/components/ui/FormField';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ClickableRow } from '@/components/ui/ClickableRow';
 import { Skeleton } from '@/components/ui/Skeleton';
 import {
   usePages,
@@ -147,17 +148,17 @@ function CmsPagesPage() {
             </thead>
             <tbody>
               {items.map((p) => (
-                <tr
+                <ClickableRow
                   key={p.id}
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => setEditing(p)}
+                  onActivate={() => setEditing(p)}
+                  ariaLabel={`Bewerk pagina ${p.title}`}
                 >
                   <td style={{ fontWeight: 600 }}>{p.title}</td>
                   <td className="mono muted">/{p.slug}</td>
                   <td className="muted">{p.blocks.length}</td>
                   <td><PageStatusPill status={p.status} /></td>
                   <td className="muted">{formatRelative(p.updatedAt)}</td>
-                </tr>
+                </ClickableRow>
               ))}
             </tbody>
           </table>

@@ -8,6 +8,8 @@ import {
   ErrorState,
   ProductGridSkeleton,
 } from '../components/States';
+import { useDocumentHead } from '../lib/useDocumentHead';
+import { useShop } from '../state/ShopProvider';
 import type { SortOption } from '../api/types';
 
 const SORTS: { value: SortOption; label: string }[] = [
@@ -20,6 +22,13 @@ const SORTS: { value: SortOption; label: string }[] = [
 
 export function CatalogPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { shop } = useShop();
+  const shopName = shop?.name ?? 'Webshop';
+
+  useDocumentHead({
+    title: `Shop — ${shopName}`,
+    description: `Ontdek het volledige assortiment van ${shopName}. Bekijk al onze producten, zoek en sorteer op prijs.`,
+  });
 
   // URL is de bron-van-waarheid voor search/sort (deelbaar + back-knop).
   const urlSearch = searchParams.get('q') ?? '';

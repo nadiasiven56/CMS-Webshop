@@ -24,6 +24,7 @@ import { asApiError } from '@/lib/api';
 import { Drawer } from '@/components/ui/Drawer';
 import { FormField } from '@/components/ui/FormField';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ClickableRow } from '@/components/ui/ClickableRow';
 import { SkeletonTableRows } from '@/components/ui/Skeleton';
 import { toast } from '@/lib/toast';
 
@@ -172,7 +173,12 @@ function UsersPage() {
                   const disabled = u.role === 'disabled';
                   const name = displayName(u.email);
                   return (
-                    <tr key={u.id} onClick={() => setEdit(u)} style={{ cursor: 'pointer', opacity: disabled ? 0.6 : 1 }}>
+                    <ClickableRow
+                      key={u.id}
+                      onActivate={() => setEdit(u)}
+                      ariaLabel={`Bewerk gebruiker ${name}`}
+                      style={{ opacity: disabled ? 0.6 : 1 }}
+                    >
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <div className="avatar" style={{ width: 30, height: 30, fontSize: 11 }}>
@@ -234,7 +240,7 @@ function UsersPage() {
                           </div>
                         )}
                       </td>
-                    </tr>
+                    </ClickableRow>
                   );
                 })}
               </tbody>

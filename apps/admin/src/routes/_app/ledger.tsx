@@ -11,6 +11,7 @@ import { BookOpenCheck, Search, BarChart3 } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ClickableRow } from '@/components/ui/ClickableRow';
 import {
   useLedger,
   money,
@@ -210,7 +211,11 @@ function LedgerPage() {
               </thead>
               <tbody>
                 {filtered.map((e) => (
-                  <tr key={e.id} onClick={() => setEntry(e)} style={{ cursor: 'pointer' }}>
+                  <ClickableRow
+                    key={e.id}
+                    onActivate={() => setEntry(e)}
+                    ariaLabel={`Open grootboekregel ${formatDate(e.entryDate)}`}
+                  >
                     <td
                       style={{
                         fontSize: 12.5,
@@ -248,7 +253,7 @@ function LedgerPage() {
                       {e.description ?? '—'}
                     </td>
                     <td style={{ fontSize: 12.5 }}>{e.channel ? channelLabel(e.channel) : <span className="muted">—</span>}</td>
-                  </tr>
+                  </ClickableRow>
                 ))}
               </tbody>
               <tfoot>

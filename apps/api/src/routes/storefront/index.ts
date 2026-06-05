@@ -38,6 +38,7 @@ import {
   clearCart,
 } from './cart.js';
 import { checkout } from './checkout.js';
+import { getOrderStatus } from './orders.js';
 import { storefrontHealth } from './health.js';
 import type { Shop } from '../../db/schema/index.js';
 
@@ -74,3 +75,6 @@ storefrontRoutes.delete('/cart/:token/items', clearCart);
 
 // ── Checkout ──
 storefrontRoutes.post('/cart/:token/checkout', checkout);
+
+// ── Order-status (publiek, voor de PSP-terugkeerpagina) ──
+storefrontRoutes.get('/orders/:orderNumber/status', getOrderStatus);

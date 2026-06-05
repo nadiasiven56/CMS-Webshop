@@ -243,6 +243,22 @@ export async function createReturnForOrder(c: Context): Promise<Response> {
     .limit(1);
   if (!order) return c.json({ error: 'order_not_found' }, 404);
 
+  // Over-refund-guard: weiger als de totale terugbetaling het order-totaal
+  // overschrijdt (anders crediteert het grootboek meer dan ooit verkocht).
+  if (input.status === 'refunded' && input.refundAmount) {
+    const capErr = await refundCapError(orderId, money(input.refundAmount));
+    if (capErr) {
+      return c.json(
+        {
+          error: 'refund_exceeds_order',
+          message: `Totale terugbetaling € ${capErr.total} overschrijdt het order-totaal € ${capErr.orderTotal} (al terugbetaald € ${capErr.alreadyRefunded}).`,
+          ...capErr,
+        },
+        409,
+      );
+    }
+  }
+
   const result = await runInTransactionWithAudit(async (tx, audit) => {
     const created = await insertReturnWithItems(
       tx,
@@ -289,6 +305,41 @@ export async function createReturnForOrder(c: Context): Promise<Response> {
   })();
 
   return c.json({ return: toReturnDto(result.ret, result.insertedItems) }, 201);
+}
+
+/**
+ * Over-refund-guard: het cumulatief terugbetaalde bedrag (bestaande 'refunded'
+ * returns + dit verzoek) mag het order-totaal niet overschrijden. Geeft een
+ * fout-detail terug bij overschrijding, anders null. (Operator-gedreven, lage
+ * concurrency → geen lock; de check leest buiten de tx.)
+ */
+async function refundCapError(
+  orderId: string,
+  requestedRefund: string,
+): Promise<{ alreadyRefunded: string; orderTotal: string; total: string } | null> {
+  const [order] = await db
+    .select({ grandTotal: orders.grandTotal })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+  if (!order) return null;
+  const existing = await db
+    .select({ refundAmount: returns.refundAmount, status: returns.status })
+    .from(returns)
+    .where(eq(returns.orderId, orderId));
+  const already = existing
+    .filter((r) => r.status === 'refunded')
+    .reduce((acc, r) => acc + Number(r.refundAmount ?? 0), 0);
+  const total = already + Number(requestedRefund ?? 0);
+  const cap = Number(order.grandTotal ?? 0);
+  if (total > cap + 0.0001) {
+    return {
+      alreadyRefunded: already.toFixed(2),
+      orderTotal: cap.toFixed(2),
+      total: total.toFixed(2),
+    };
+  }
+  return null;
 }
 
 export async function listReturnsForOrder(c: Context): Promise<Response> {

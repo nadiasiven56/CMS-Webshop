@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Grid3x3, Globe, List, Plus, Search, Store } from 'lucide-react';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ClickableRow } from '@/components/ui/ClickableRow';
 import { toastBus } from '@/components/ui/Toast';
 import { asApiError } from '@/lib/api';
 import { ShopStatusBadge } from '@/components/shops/ShopStatusBadge';
@@ -306,7 +307,7 @@ function ShopTable({ items, onOpen }: { items: ShopDto[]; onOpen: (id: string) =
         </thead>
         <tbody>
           {items.map((shop) => (
-            <tr key={shop.id} style={{ cursor: 'pointer' }} onClick={() => onOpen(shop.id)}>
+            <ClickableRow key={shop.id} onActivate={() => onOpen(shop.id)} ariaLabel={`Open shop ${shop.name}`}>
               <td>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                   <span aria-hidden style={{ width: 10, height: 10, borderRadius: 3, background: brandingDot(shop), display: 'inline-block' }} />
@@ -317,7 +318,7 @@ function ShopTable({ items, onOpen }: { items: ShopDto[]; onOpen: (id: string) =
               <td>{shop.domain ?? <span className="muted">—</span>}</td>
               <td>{shop.currency}</td>
               <td><ShopStatusBadge status={shop.status} /></td>
-            </tr>
+            </ClickableRow>
           ))}
         </tbody>
       </table>

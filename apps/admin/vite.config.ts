@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite';
@@ -40,5 +41,12 @@ export default defineConfig({
     outDir: 'dist',
     target: 'es2022',
     sourcemap: true,
+  },
+  // Vitest = unit-tests onder src/. De Playwright-e2e-specs in e2e/ draaien
+  // via `pnpm test:e2e` (playwright), niet via de vitest-runner.
+  test: {
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
+    passWithNoTests: true,
   },
 });

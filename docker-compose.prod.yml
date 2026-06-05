@@ -1,0 +1,102 @@
+# ─────────────────────────────────────────────────────────────
+# Webshop-CRM — productie-stack (self-hosted, één commando).
+#
+#   docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+#
+# Services:
+#   postgres  — Postgres 16, persistente volume
+#   api       — Hono-API (tsx), migreert+seedt bij start, intern op :7300
+#   admin     — Caddy: serveert de admin-SPA + proxyt /api → api (publiek :80/:443)
+#
+# Alle variabelen komen uit .env.production (zie .env.production.example).
+# ─────────────────────────────────────────────────────────────
+name: webshop-crm
+
+# ─── Gedeelde log-rotatie (anchor) ────────────────────────────
+# json-file met rotatie zodat container-logs de schijf niet vol laten lopen.
+# Per service hergebruikt via `logging: *default-logging`.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-webshop}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD ontbreekt in .env.production}
+      POSTGRES_DB: ${POSTGRES_DB:-webshop_crm}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-webshop} -d ${POSTGRES_DB:-webshop_crm}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    logging: *default-logging
+    # Secrets + app-config (SESSION_SECRET, CHANNEL_SECRET_KEY, SEED_ADMIN_*, ...)
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: 7300
+      # DATABASE_URL wijst naar de interne postgres-service (overschrijft env_file).
+      # ⚠️ LET OP: POSTGRES_PASSWORD wordt hier RAUW in de URL geïnterpoleerd. Een
+      # wachtwoord met @ : / # ? % of spaties BREEKT de connection-string. Gebruik
+      # daarom een hex-wachtwoord ZONDER speciale tekens (zie .env.production.example:
+      #   openssl rand -hex 24). Dan is geen URL-encoding nodig.
+      DATABASE_URL: postgres://${POSTGRES_USER:-webshop}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-webshop_crm}
+      ADMIN_PUBLIC_URL: ${PUBLIC_URL:-http://localhost}
+      API_PUBLIC_URL: ${PUBLIC_URL:-http://localhost}
+      PUBLIC_BASE_URL: ${PUBLIC_URL:-http://localhost}
+      # Sessie-cookie `Secure`-flag, ontkoppeld van NODE_ENV. Leeg laten → afgeleid
+      # uit (production + https-PUBLIC_URL). Zet 'true' achter een TLS-terminerende
+      # proxy (Cloudflare-tunnel) waar Caddy intern op :80 draait maar extern https is.
+      COOKIE_SECURE: ${COOKIE_SECURE:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # Lokale image-uploads persistent (komt overeen met STORAGE_LOCAL_PATH=./storage).
+      - storage:/app/apps/api/storage
+    expose:
+      - "7300"
+
+  admin:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+      args:
+        # Publieke API-base voor het storefront-connect-snippet (optioneel).
+        VITE_API_URL: ${PUBLIC_API_URL:-}
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      # Domein incl. scheme voor auto-HTTPS, of ":80" voor lokaal/zonder TLS.
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+      API_UPSTREAM: api:7300
+    depends_on:
+      - api
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - caddydata:/data
+      - caddyconfig:/config
+
+volumes:
+  pgdata:
+  storage:
+  caddydata:
+  caddyconfig:

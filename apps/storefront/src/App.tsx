@@ -8,7 +8,9 @@ import { CatalogPage } from './pages/CatalogPage';
 import { ProductPage } from './pages/ProductPage';
 import { CartPage } from './pages/CartPage';
 import { CheckoutPage } from './pages/CheckoutPage';
+import { ReturnPage } from './pages/ReturnPage';
 import { ThankYouPage } from './pages/ThankYouPage';
+import { OrderTrackingPage } from './pages/OrderTrackingPage';
 import { ContentPage } from './pages/ContentPage';
 import { BlogListPage } from './pages/BlogListPage';
 import { BlogPostPage } from './pages/BlogPostPage';
@@ -32,7 +34,9 @@ export function App() {
                 <Route path="/product/:slug" element={<ProductPage />} />
                 <Route path="/cart" element={<CartPage />} />
                 <Route path="/checkout" element={<CheckoutPage />} />
+                <Route path="/checkout/return" element={<ReturnPage />} />
                 <Route path="/bedankt" element={<ThankYouPage />} />
+                <Route path="/volg-bestelling" element={<OrderTrackingPage />} />
                 <Route path="/pagina/:slug" element={<ContentPage />} />
                 <Route path="/blog" element={<BlogListPage />} />
                 <Route path="/blog/:slug" element={<BlogPostPage />} />

@@ -1,0 +1,26 @@
+# Build-context slank houden + voorkomen dat secrets/artefacten meelekken.
+node_modules
+**/node_modules
+**/dist
+**/.vite
+.git
+.gitignore
+.pgdata
+**/storage
+*.log
+**/*.log
+
+# NOOIT secrets de image-context in (env wordt at runtime via compose geleverd)
+.env
+.env.*
+
+# Backups / dev-rommel
+**/*.bak
+**/*.pre-*.bak
+**/playwright-report
+**/test-results
+**/coverage
+
+# Docs niet nodig in build (image bevat alleen runtime)
+**/*.md
+!packages/shared/README.md

@@ -41,6 +41,16 @@ const EnvSchema = z.object({
   CHANNEL_SECRET_KEY: z.string().min(32, 'CHANNEL_SECRET_KEY moet 32+ chars zijn'),
   SESSION_TTL_DAYS: z.coerce.number().int().positive().default(30),
 
+  // Sessie-cookie `Secure`-flag, ONTKOPPELD van NODE_ENV (deploy-bug-fix).
+  // Optioneel: laat leeg → afgeleid uit (production + https-public-URL).
+  // Zet expliciet 'true' achter een TLS-terminerende proxy (Cloudflare-tunnel/
+  // externe reverse-proxy) terwijl Caddy intern op :80 (http) draait.
+  // Zet 'false' om over plain HTTP te kunnen inloggen (lokale/IP-test).
+  COOKIE_SECURE: z
+    .union([z.literal('true'), z.literal('false')])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === 'true')),
+
   // Seed
   SEED_ADMIN_EMAIL: z.string().email().default('admin@webshop-crm.local'),
   SEED_ADMIN_PASSWORD: z.string().min(8).default('change-me-please'),
