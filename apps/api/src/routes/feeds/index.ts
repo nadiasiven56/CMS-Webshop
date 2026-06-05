@@ -9,11 +9,13 @@
  *     GET  /api/feeds/configs?shop_id=            — feed-configs van een shop
  *     PUT  /api/feeds/configs?shop_id=            — upsert feed-config (per channel)
  *     POST /api/feeds/configs/:id/rebuild         — markeer last_built_at + item-count
+ *     GET  /api/feeds/configs/validate?shop_id=   — GMC feed-check (verplichte velden)
  *
  *   PUBLIC  (GEEN auth, zoals storefront) — door Google/Meta/storefront opgehaald:
  *     GET  /api/feeds/public/:shopId/google.xml   — Google Shopping RSS 2.0
  *     GET  /api/feeds/public/:shopId/meta.csv     — Meta catalog CSV
  *     GET  /api/feeds/public/:shopId/analytics.json — publieke tag-ids voor de storefront
+ *     GET  /api/feeds/public/:shopId/tags.js      — kant-en-klare storefront-tags (1 scripttag)
  *
  * STRUCTUUR: de public-routes mogen NOOIT achter `requireAuth`. Daarom hangen we
  * `requireAuth` NIET op de parent-router, maar alleen op de `authed` sub-Hono.
@@ -46,6 +48,8 @@ import {
 import { buildFeed, buildFeedItems } from '../../domain/feeds/build.js';
 import { renderGoogleShoppingXml } from '../../domain/feeds/google.js';
 import { renderMetaCsv } from '../../domain/feeds/meta.js';
+import { renderStorefrontTagsJs } from '../../domain/feeds/tags.js';
+import { validateGoogleFeed } from '../../domain/feeds/validate.js';
 import {
   AnalyticsUpsertSchema,
   FeedConfigUpsertSchema,
@@ -131,6 +135,7 @@ authedRoutes.put('/analytics', async (c) => {
       if (patch.googleAdsId !== undefined) setValues.googleAdsId = patch.googleAdsId;
       if (patch.googleAdsConversionLabel !== undefined)
         setValues.googleAdsConversionLabel = patch.googleAdsConversionLabel;
+      if (patch.clarityProjectId !== undefined) setValues.clarityProjectId = patch.clarityProjectId;
       if (patch.customHeadHtml !== undefined) setValues.customHeadHtml = patch.customHeadHtml;
       if (patch.enabled !== undefined) setValues.enabled = patch.enabled;
 
@@ -151,6 +156,7 @@ authedRoutes.put('/analytics', async (c) => {
           metaPixelId: patch.metaPixelId ?? null,
           googleAdsId: patch.googleAdsId ?? null,
           googleAdsConversionLabel: patch.googleAdsConversionLabel ?? null,
+          clarityProjectId: patch.clarityProjectId ?? null,
           customHeadHtml: patch.customHeadHtml ?? null,
           ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
         })
@@ -320,6 +326,34 @@ authedRoutes.post('/configs/:id/rebuild', async (c) => {
   return c.json({ config: toFeedConfigDto(updated), itemCount: items.length });
 });
 
+// ─── GET /configs/validate?shop_id= — GMC feed-check ─────────────
+//
+// Draait dezelfde bron als de publieke google.xml-feed en rapporteert per
+// product of de GMC-verplichte velden aanwezig zijn (image_link, price, title,
+// …) + waarschuwt bij ontbrekend merk/GTIN. Geen mutatie — puur read-side.
+
+authedRoutes.get('/configs/validate', async (c) => {
+  const parsed = ShopIdQuerySchema.safeParse(c.req.query());
+  if (!parsed.success) {
+    return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
+  }
+  const shopId = parsed.data.shop_id;
+  if (!(await shopExists(shopId))) return c.json({ error: 'shop_not_found' }, 404);
+
+  // Respecteer de google_shopping feed_config (includeOutOfStock/currency) als die bestaat.
+  const [cfg] = await db
+    .select()
+    .from(feedConfig)
+    .where(and(eq(feedConfig.shopId, shopId), eq(feedConfig.channel, 'google_shopping')))
+    .limit(1);
+
+  const report = await validateGoogleFeed(shopId, {
+    includeOutOfStock: cfg?.includeOutOfStock ?? false,
+    currency: cfg?.currency,
+  });
+  return c.json({ report });
+});
+
 // ════════════════════════════════════════════════════════════════
 // PUBLIC sub-router — GEEN auth (zoals storefront)
 // ════════════════════════════════════════════════════════════════
@@ -390,6 +424,29 @@ publicRoutes.get('/:shopId/analytics.json', async (c) => {
     .where(eq(storefrontAnalytics.shopId, shopId))
     .limit(1);
   return c.json(toPublicAnalyticsDto(row ?? null));
+});
+
+// ─── GET /public/:shopId/tags.js ─────────────────────────────────
+//
+// Eén scripttag voor de storefront: kant-en-klare JS die GA4, Google Ads,
+// Meta Pixel, Microsoft Clarity en de custom-head-HTML laadt op basis van de
+// opgeslagen ids. enabled-gating via toPublicAnalyticsDto (disabled → no-op JS).
+
+publicRoutes.get('/:shopId/tags.js', async (c) => {
+  const headers = {
+    'Content-Type': 'application/javascript; charset=utf-8',
+    'Cache-Control': 'public, max-age=300',
+  };
+  const shopId = c.req.param('shopId');
+  if (!isUuid(shopId)) {
+    return c.body(renderStorefrontTagsJs(toPublicAnalyticsDto(null)), 200, headers);
+  }
+  const [row] = await db
+    .select()
+    .from(storefrontAnalytics)
+    .where(eq(storefrontAnalytics.shopId, shopId))
+    .limit(1);
+  return c.body(renderStorefrontTagsJs(toPublicAnalyticsDto(row ?? null)), 200, headers);
 });
 
 // ════════════════════════════════════════════════════════════════

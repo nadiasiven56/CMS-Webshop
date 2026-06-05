@@ -53,6 +53,9 @@ export const storefrontAnalytics = pgTable(
     googleAdsId: text('google_ads_id'),
     // Google Ads conversion label (hoort bij een specifieke conversie-actie).
     googleAdsConversionLabel: text('google_ads_conversion_label'),
+    // Microsoft Clarity project-id (bv. 'abcd1234ef'). Client-side, net als de
+    // andere ids: de storefront laadt clarity.ms/tag/<id>. Nullable: later ingevuld.
+    clarityProjectId: text('clarity_project_id'),
     // Vrije <head>-HTML (verification-meta's, extra tags). Storefront rendert
     // dit rauw — operator-verantwoordelijkheid.
     customHeadHtml: text('custom_head_html'),

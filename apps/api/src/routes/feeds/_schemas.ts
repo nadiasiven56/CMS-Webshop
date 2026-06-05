@@ -32,6 +32,7 @@ export const AnalyticsUpsertSchema = z
     metaPixelId: nullableId,
     googleAdsId: nullableId,
     googleAdsConversionLabel: nullableId,
+    clarityProjectId: nullableId,
     // customHeadHtml mag groter zijn (snippets). Lege string → null.
     customHeadHtml: z
       .string()
