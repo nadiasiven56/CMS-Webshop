@@ -36,10 +36,13 @@ export interface AnalyticsConfigDto {
   metaPixelId: string | null;
   googleAdsId: string | null;
   googleAdsConversionLabel: string | null;
+  clarityProjectId: string | null;
   customHeadHtml: string | null;
   enabled: boolean;
   /** Publieke analytics.json-URL die de storefront-SDK ophaalt (absoluut). */
   publicAnalyticsUrl: string;
+  /** Publieke tags.js-URL: één scripttag in de storefront laadt alle tags (absoluut). */
+  publicTagsUrl: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -106,6 +109,7 @@ export interface UpsertAnalyticsInput {
   metaPixelId?: string | null;
   googleAdsId?: string | null;
   googleAdsConversionLabel?: string | null;
+  clarityProjectId?: string | null;
   customHeadHtml?: string | null;
   enabled?: boolean;
 }
@@ -182,6 +186,48 @@ export function useRebuildFeed(shopId: string | null) {
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: MARKETING_QUERY_KEYS.feedConfigs(shopId) });
+    },
+  });
+}
+
+// ─── Feed-validatie (GMC verplichte velden) ────────────────────
+
+export interface FeedValidationIssue {
+  itemId: string;
+  title: string;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface FeedValidationReport {
+  shopId: string;
+  totalItems: number;
+  okItems: number;
+  itemsWithErrors: number;
+  itemsWithWarnings: number;
+  counts: {
+    missingImageLink: number;
+    invalidPrice: number;
+    missingTitle: number;
+    missingLink: number;
+    missingDescription: number;
+    noBrandNoGtin: number;
+    missingGtin: number;
+  };
+  sample: FeedValidationIssue[];
+}
+
+/**
+ * GET /feeds/configs/validate — checkt of de producten de door Google Merchant
+ * Center verplichte velden hebben. Op-aanvraag (knop) → useMutation.
+ */
+export function useValidateFeed(shopId: string | null) {
+  return useMutation({
+    mutationFn: async (): Promise<FeedValidationReport> => {
+      const res = await api.get<{ report: FeedValidationReport }>('/feeds/configs/validate', {
+        params: { shop_id: shopId },
+      });
+      return res.data.report;
     },
   });
 }

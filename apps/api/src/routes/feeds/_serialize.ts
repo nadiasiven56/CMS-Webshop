@@ -22,10 +22,13 @@ export interface AnalyticsDto {
   metaPixelId: string | null;
   googleAdsId: string | null;
   googleAdsConversionLabel: string | null;
+  clarityProjectId: string | null;
   customHeadHtml: string | null;
   enabled: boolean;
   /** Publieke analytics.json-URL die de storefront-SDK ophaalt. */
   publicAnalyticsUrl: string;
+  /** Publieke tags.js-URL: één scripttag in de storefront laadt alle tags. */
+  publicTagsUrl: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -39,9 +42,11 @@ export function toAnalyticsDto(a: StorefrontAnalytics, baseUrl?: string): Analyt
     metaPixelId: a.metaPixelId,
     googleAdsId: a.googleAdsId,
     googleAdsConversionLabel: a.googleAdsConversionLabel,
+    clarityProjectId: a.clarityProjectId,
     customHeadHtml: a.customHeadHtml,
     enabled: a.enabled,
     publicAnalyticsUrl: `${base}/api/feeds/public/${a.shopId}/analytics.json`,
+    publicTagsUrl: `${base}/api/feeds/public/${a.shopId}/tags.js`,
     createdAt: a.createdAt.toISOString(),
     updatedAt: a.updatedAt.toISOString(),
   };
@@ -59,6 +64,7 @@ export interface PublicAnalyticsDto {
   metaPixelId: string | null;
   googleAdsId: string | null;
   googleAdsConversionLabel: string | null;
+  clarityProjectId: string | null;
   customHeadHtml: string | null;
 }
 
@@ -72,6 +78,7 @@ export function toPublicAnalyticsDto(
       metaPixelId: null,
       googleAdsId: null,
       googleAdsConversionLabel: null,
+      clarityProjectId: null,
       customHeadHtml: null,
     };
   }
@@ -81,6 +88,7 @@ export function toPublicAnalyticsDto(
     metaPixelId: a.metaPixelId,
     googleAdsId: a.googleAdsId,
     googleAdsConversionLabel: a.googleAdsConversionLabel,
+    clarityProjectId: a.clarityProjectId,
     customHeadHtml: a.customHeadHtml,
   };
 }

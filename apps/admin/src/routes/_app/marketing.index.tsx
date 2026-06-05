@@ -30,6 +30,10 @@ import {
   LineChart,
   Save,
   ShoppingBag,
+  ShieldCheck,
+  CheckCircle2,
+  AlertTriangle,
+  Code2,
 } from 'lucide-react';
 import { useActiveShop } from '@/lib/shop-context';
 import {
@@ -38,12 +42,14 @@ import {
   useFeedConfigs,
   useUpsertFeedConfig,
   useRebuildFeed,
+  useValidateFeed,
   feedChannelMeta,
   FEED_CHANNELS,
   type FeedConfigDto,
   type FeedChannel,
   type AnalyticsConfigDto,
   type UpsertAnalyticsInput,
+  type FeedValidationReport,
 } from '@/components/marketing/api';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { FormField } from '@/components/ui/FormField';
@@ -165,7 +171,7 @@ function MarketingPage() {
               }
               icon={LineChart}
               size="sm"
-              hint="GA4 / Pixel / Ads"
+              hint="GA4 / Pixel / Ads / Clarity"
             />
             <KpiCard
               label="Shop"
@@ -485,6 +491,9 @@ function FeedCard({
         url={config ? buildOriginUrl(config.publicFeedUrl) : null}
         hint={meta.hint}
       />
+
+      {/* GMC feed-validatie — alleen voor de Google Shopping-feed */}
+      {channel === 'google_shopping' && <GmcValidateBlock shopId={shopId} />}
     </div>
   );
 }
@@ -505,6 +514,7 @@ function AnalyticsForm({
     metaPixelId: config?.metaPixelId ?? '',
     googleAdsId: config?.googleAdsId ?? '',
     googleAdsConversionLabel: config?.googleAdsConversionLabel ?? '',
+    clarityProjectId: config?.clarityProjectId ?? '',
     customHeadHtml: config?.customHeadHtml ?? '',
     enabled: config?.enabled ?? true,
   });
@@ -516,6 +526,7 @@ function AnalyticsForm({
       metaPixelId: config?.metaPixelId ?? '',
       googleAdsId: config?.googleAdsId ?? '',
       googleAdsConversionLabel: config?.googleAdsConversionLabel ?? '',
+      clarityProjectId: config?.clarityProjectId ?? '',
       customHeadHtml: config?.customHeadHtml ?? '',
       enabled: config?.enabled ?? true,
     });
@@ -534,6 +545,7 @@ function AnalyticsForm({
       metaPixelId: form.metaPixelId.trim() || null,
       googleAdsId: form.googleAdsId.trim() || null,
       googleAdsConversionLabel: form.googleAdsConversionLabel.trim() || null,
+      clarityProjectId: form.clarityProjectId.trim() || null,
       customHeadHtml: form.customHeadHtml.trim() || null,
       enabled: form.enabled,
     };
@@ -569,6 +581,8 @@ function AnalyticsForm({
           {form.enabled ? 'Actief' : 'Uit'}
         </label>
       </div>
+
+      <StorefrontScriptBlock shopId={shopId} />
 
       <div
         style={{
@@ -617,6 +631,18 @@ function AnalyticsForm({
             value={form.googleAdsConversionLabel}
             onChange={(e) => set('googleAdsConversionLabel', e.target.value)}
             placeholder="abcDEF123"
+          />
+        </FormField>
+
+        <FormField
+          label="Microsoft Clarity Project ID"
+          hint="Heatmaps & sessie-opnames. clarity.microsoft.com → je project → Settings → Overview."
+        >
+          <input
+            type="text"
+            value={form.clarityProjectId}
+            onChange={(e) => set('clarityProjectId', e.target.value)}
+            placeholder="abcd1234ef"
           />
         </FormField>
       </div>
@@ -722,6 +748,163 @@ function CopyUrl({ url, hint }: { url: string | null; hint: string }) {
         )}
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--theme-muted)', marginTop: 6 }}>{hint}</div>
+    </div>
+  );
+}
+
+/* ─── Storefront-koppeling: één scripttag (tags.js) ─────────── */
+
+function StorefrontScriptBlock({ shopId }: { shopId: string }) {
+  const [copied, setCopied] = useState(false);
+  const tagsUrl = buildOriginUrl(`/api/feeds/public/${shopId}/tags.js`);
+  const snippet = `<script async src="${tagsUrl}"></script>`;
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(snippet);
+      setCopied(true);
+      toast.success('Scripttag gekopieerd — plak in de <head> van je storefront.');
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error('Kopiëren mislukt — selecteer en kopieer handmatig.');
+    }
+  }
+
+  return (
+    <div
+      style={{
+        margin: '4px 0 16px',
+        padding: '12px 14px',
+        background: 'var(--theme-accent-subtle)',
+        border: '1px solid var(--theme-accent-border)',
+        borderRadius: 10,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <Code2 size={15} style={{ color: 'var(--theme-accent)' }} />
+        <strong style={{ fontSize: 12.5 }}>
+          Storefront-koppeling — plak deze ene regel in je &lt;head&gt;
+        </strong>
+      </div>
+      <p style={{ fontSize: 11.5, color: 'var(--theme-muted)', margin: '0 0 8px' }}>
+        Eén scripttag laadt automatisch GA4, Google Ads, Meta Pixel én Microsoft Clarity op
+        basis van de ids hieronder. Niets ingevuld of "Uit" → het script doet niets.
+      </p>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <code
+          className="mono"
+          style={{
+            flex: 1,
+            minWidth: 0,
+            padding: '8px 10px',
+            background: 'var(--surface-1)',
+            border: '1px solid var(--border-default)',
+            borderRadius: 8,
+            fontSize: 11.5,
+            color: 'var(--text-soft)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+          title={snippet}
+        >
+          {snippet}
+        </code>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={() => void copy()}
+          title="Kopieer scripttag"
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── GMC feed-validatie ────────────────────────────────────── */
+
+function GmcValidateBlock({ shopId }: { shopId: string }) {
+  const validate = useValidateFeed(shopId);
+  const [report, setReport] = useState<FeedValidationReport | null>(null);
+
+  async function run() {
+    try {
+      const r = await validate.mutateAsync();
+      setReport(r);
+      if (r.totalItems === 0) {
+        toast.info('Geen gepubliceerde producten om te valideren.');
+      } else if (r.itemsWithErrors === 0) {
+        toast.success(`Feed OK — ${r.totalItems} producten, geen blokkerende fouten.`);
+      } else {
+        toast.error(`${r.itemsWithErrors} van ${r.totalItems} producten worden door GMC afgekeurd.`);
+      }
+    } catch (err) {
+      toast.error(`Validatie mislukt: ${asApiError(err).message}`);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 12, position: 'relative' }}>
+      <button
+        type="button"
+        className="btn btn-secondary btn-sm"
+        onClick={() => void run()}
+        disabled={validate.isPending}
+        style={{ width: '100%', justifyContent: 'center' }}
+      >
+        <ShieldCheck size={13} className={validate.isPending ? 'spin' : ''} />
+        {validate.isPending ? 'Controleren…' : 'Controleer feed voor Merchant Center'}
+      </button>
+      {report && <ValidationReportView report={report} />}
+    </div>
+  );
+}
+
+function ValidationReportView({ report }: { report: FeedValidationReport }) {
+  const allOk = report.totalItems > 0 && report.itemsWithErrors === 0;
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        padding: '10px 12px',
+        background: 'var(--surface-2)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: 8,
+        fontSize: 12,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        {allOk ? (
+          <CheckCircle2 size={15} style={{ color: 'var(--theme-success, #22c55e)' }} />
+        ) : (
+          <AlertTriangle size={15} style={{ color: 'var(--theme-danger, #ef4444)' }} />
+        )}
+        <strong>
+          {report.totalItems} producten · {report.okItems} volledig OK
+          {report.itemsWithErrors > 0 && ` · ${report.itemsWithErrors} afgekeurd`}
+          {report.itemsWithWarnings > 0 && ` · ${report.itemsWithWarnings} met waarschuwing`}
+        </strong>
+      </div>
+      <ul style={{ margin: 0, paddingLeft: 16, color: 'var(--theme-muted)', lineHeight: 1.7 }}>
+        {report.counts.missingImageLink > 0 && (
+          <li>{report.counts.missingImageLink}× zonder afbeelding (verplicht — afgekeurd)</li>
+        )}
+        {report.counts.invalidPrice > 0 && (
+          <li>{report.counts.invalidPrice}× zonder geldige prijs (afgekeurd)</li>
+        )}
+        {report.counts.missingTitle > 0 && <li>{report.counts.missingTitle}× zonder titel (afgekeurd)</li>}
+        {report.counts.missingDescription > 0 && (
+          <li>{report.counts.missingDescription}× zonder omschrijving (afgekeurd)</li>
+        )}
+        {report.counts.noBrandNoGtin > 0 && (
+          <li>{report.counts.noBrandNoGtin}× zonder merk én GTIN (beperkt bereik)</li>
+        )}
+        {allOk && report.itemsWithWarnings === 0 && (
+          <li>Alle producten voldoen aan de GMC-vereisten.</li>
+        )}
+      </ul>
     </div>
   );
 }

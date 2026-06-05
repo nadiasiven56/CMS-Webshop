@@ -13,6 +13,7 @@ import {
 } from 'react';
 import { api, ApiError } from '../api/client';
 import { getActiveShopSlug } from '../api/shop-context';
+import { injectStorefrontTags } from '../analytics/tags';
 import type { Shop } from '../api/types';
 
 interface ShopState {
@@ -60,6 +61,9 @@ export function ShopProvider({ children }: { children: ReactNode }) {
       .getShop(ctrl.signal)
       .then((shop) => {
         applyBranding(shop);
+        // Laad de per-shop marketing-tags (GA4/Ads/Pixel/Clarity) zodra de
+        // shop-id bekend is. No-op als er niets is ingevuld in de admin.
+        injectStorefrontTags(shop.id);
         setState({ shop, slug, loading: false, error: null });
       })
       .catch((err) => {
