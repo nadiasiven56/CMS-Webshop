@@ -1,6 +1,6 @@
 [build]
 builder = "nixpacks"
-buildCommand = "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @webshop-crm/shared build && pnpm --filter @webshop-crm/api build && pnpm --filter @webshop-crm/api db:migrate"
+buildCommand = "corepack enable && NODE_ENV=development pnpm install --frozen-lockfile && pnpm --filter @webshop-crm/shared build && pnpm --filter @webshop-crm/api build && pnpm --filter @webshop-crm/api db:migrate"
 
 [deploy]
 startCommand = "corepack enable && pnpm --filter @webshop-crm/api start"
