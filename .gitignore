@@ -23,6 +23,7 @@ build/
 
 # Storage / runtime
 /storage/
+!apps/api/src/lib/storage/
 .docker-data/
 *.log
 logs/
