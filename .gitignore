@@ -22,7 +22,7 @@ build/
 .pgdata/
 
 # Storage / runtime
-storage/
+/storage/
 .docker-data/
 *.log
 logs/
