@@ -1,20 +1,9 @@
 /**
  * Allowed MIME types for image uploads
  */
-export type AllowedImageMime =
-  | 'image/jpeg'
-  | 'image/png'
-  | 'image/webp'
-  | 'image/gif'
-  | 'image/svg+xml';
+export type AllowedImageMime = 'image/jpeg' | 'image/png' | 'image/webp';
 
-const ALLOWED_MIMES = new Set<string>([
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'image/gif',
-  'image/svg+xml',
-]);
+const ALLOWED_MIMES = new Set<string>(['image/jpeg', 'image/png', 'image/webp']);
 
 /**
  * Check if a MIME type is an allowed image type
@@ -35,12 +24,30 @@ export function sanitizeFilenameStem(name: string): string {
     .slice(0, 100);
 }
 
+/** Extensie per toegestane mime, fallback op de bestandsnaam. */
+function extensionFor(originalName: string, mime?: string): string {
+  switch (mime) {
+    case 'image/jpeg': return 'jpg';
+    case 'image/png': return 'png';
+    case 'image/webp': return 'webp';
+    default: return originalName.split('.').pop()?.toLowerCase() || 'bin';
+  }
+}
+
 /**
- * Build a storage key for an image
+ * Bouw een canonical storage-key voor een product-image.
+ *   makeImageKey({ productId, originalName, uuid, mime })
+ *   → "images/products/<productId>/<uuid>-<stem>.<ext>"  (met product)
+ *   → "images/loose/<uuid>-<stem>.<ext>"                 (losse upload)
  */
-export function makeImageKey(productId: string, filename: string): string {
-  const stem = sanitizeFilenameStem(filename.replace(/\.[^.]+$/, ''));
-  const ext = filename.split('.').pop()?.toLowerCase() || 'jpg';
-  const timestamp = Date.now();
-  return `products/${productId}/${stem}-${timestamp}.${ext}`;
+export function makeImageKey(input: {
+  productId: string | null;
+  originalName: string;
+  uuid: string;
+  mime?: string;
+}): string {
+  const stem = sanitizeFilenameStem(input.originalName.replace(/\.[^.]+$/, '')) || 'image';
+  const ext = extensionFor(input.originalName, input.mime);
+  const scope = input.productId ? `products/${input.productId}` : 'loose';
+  return `images/${scope}/${input.uuid}-${stem}.${ext}`;
 }

@@ -4,15 +4,15 @@
  * Backend draait niet altijd (geen Postgres). Deze module produceert
  * realistische demo-data zodat de polished UI altijd zichtbaar is.
  *
- * Toggle via `VITE_DEMO_MODE` (default true). Wanneer aan: API-calls
- * worden niet gedaan, hooks resolven direct met mock-data. Wanneer uit:
- * api-with-fallback probeert eerst echte API en valt terug op mock bij fout.
+ * Toggle via `VITE_DEMO_MODE` (default FALSE — admin praat met de echte
+ * API). Wanneer aan: API-calls worden niet gedaan, hooks resolven direct
+ * met mock-data. Alleen expliciet aanzetten voor een UI-demo zonder backend.
  */
 
 import type { Shop } from './shop-context';
 
 export const DEMO_MODE: boolean =
-  (import.meta.env.VITE_DEMO_MODE ?? 'true').toString().toLowerCase() !== 'false';
+  (import.meta.env.VITE_DEMO_MODE ?? 'false').toString().toLowerCase() === 'true';
 
 /* ─── Helpers ────────────────────────────────────────────────────────── */
 

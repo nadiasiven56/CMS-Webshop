@@ -3,10 +3,17 @@ import * as path from 'node:path';
 
 export { isAllowedMime, makeImageKey, sanitizeFilenameStem, type AllowedImageMime } from './sanitize.js';
 
+/** Resultaat van een succesvolle put() — de routes gebruiken url/key/size. */
+export interface PutResult {
+  key: string;
+  url: string;
+  size: number;
+}
+
 export interface StorageDriver {
-  put(key: string, data: Buffer, contentType: string): Promise<string>;
+  put(key: string, data: Buffer, contentType: string): Promise<PutResult>;
   delete(key: string): Promise<void>;
-  getUrl(key: string): string;
+  publicUrl(key: string): string;
 }
 
 /**
@@ -14,18 +21,18 @@ export interface StorageDriver {
  */
 class LocalStorage implements StorageDriver {
   private basePath: string;
-  private publicUrl: string;
+  private baseUrl: string;
 
-  constructor(basePath: string, publicUrl: string) {
+  constructor(basePath: string, baseUrl: string) {
     this.basePath = basePath;
-    this.publicUrl = publicUrl;
+    this.baseUrl = baseUrl;
   }
 
-  async put(key: string, data: Buffer, _contentType: string): Promise<string> {
+  async put(key: string, data: Buffer, _contentType: string): Promise<PutResult> {
     const filePath = path.join(this.basePath, key);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, data);
-    return this.getUrl(key);
+    return { key, url: this.publicUrl(key), size: data.byteLength };
   }
 
   async delete(key: string): Promise<void> {
@@ -37,8 +44,8 @@ class LocalStorage implements StorageDriver {
     }
   }
 
-  getUrl(key: string): string {
-    return `${this.publicUrl}/storage/${key}`;
+  publicUrl(key: string): string {
+    return `${this.baseUrl}/storage/${key}`;
   }
 }
 
@@ -48,16 +55,16 @@ class LocalStorage implements StorageDriver {
 class MemoryStorage implements StorageDriver {
   private files = new Map<string, Buffer>();
 
-  async put(key: string, data: Buffer, _contentType: string): Promise<string> {
+  async put(key: string, data: Buffer, _contentType: string): Promise<PutResult> {
     this.files.set(key, data);
-    return this.getUrl(key);
+    return { key, url: this.publicUrl(key), size: data.byteLength };
   }
 
   async delete(key: string): Promise<void> {
     this.files.delete(key);
   }
 
-  getUrl(key: string): string {
+  publicUrl(key: string): string {
     return `/storage/${key}`;
   }
 }
