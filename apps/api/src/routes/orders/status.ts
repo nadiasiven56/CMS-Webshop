@@ -22,6 +22,7 @@ import {
   isOrderStatus,
   type OrderStatus,
 } from '../../domain/orders/status-machine.js';
+import { canAccessShop } from '../../lib/access.js';
 import { isUuid } from '../products/_validate.js';
 import { StatusUpdateSchema } from './_schemas.js';
 import { toOrderCore } from './_serialize.js';
@@ -48,6 +49,10 @@ export async function updateOrderStatus(c: Context): Promise<Response> {
 
   const [existing] = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
   if (!existing) {
+    return c.json({ error: 'not_found' }, 404);
+  }
+  // Multi-user: shop niet toegankelijk → zelfde 404 (geen existence-leak).
+  if (!(await canAccessShop(user, existing.shopId))) {
     return c.json({ error: 'not_found' }, 404);
   }
 

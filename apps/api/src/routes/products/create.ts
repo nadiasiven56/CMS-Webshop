@@ -25,6 +25,7 @@ import {
   locations,
 } from '../../db/schema/index.js';
 import { ProductCreateInputSchema } from './_schemas.js';
+import { isAdmin } from '../../lib/access.js';
 import { slugify } from '../../domain/products/slugify.js';
 import { makeUniqueSlug } from '../../domain/products/slug-unique.js';
 import { writeProductAudit } from '../../domain/products/audit.js';
@@ -59,6 +60,9 @@ export async function createProduct(c: Context): Promise<Response> {
         productType: input.productType ?? null,
         status: input.status,
         tags: input.tags,
+        // Multi-user: role 'user' wordt eigenaar van zijn eigen producten;
+        // admin maakt platform-catalogus aan (owner_user_id = null).
+        ownerUserId: isAdmin(user) ? null : user.id,
       })
       .returning();
     if (!product) throw new Error('product insert returned no row');

@@ -13,6 +13,7 @@ import type { Context } from 'hono';
 import { eq } from 'drizzle-orm';
 import { db } from '../../lib/db.js';
 import { customers, shops } from '../../db/schema/index.js';
+import { canAccessShop } from '../../lib/access.js';
 import { CustomerCreateSchema } from './_schemas.js';
 import { toCustomerDto } from './_serialize.js';
 import { isUniqueViolation } from './_db-errors.js';
@@ -32,6 +33,11 @@ export async function createCustomer(c: Context): Promise<Response> {
     .where(eq(shops.id, input.shopId))
     .limit(1);
   if (!shop) {
+    return c.json({ error: 'shop_not_found' }, 404);
+  }
+  // Multi-user: create alleen op een toegankelijke shop. Zelfde 404-shape als
+  // een onbestaande shop → geen existence-leak.
+  if (!(await canAccessShop(c.get('user'), input.shopId))) {
     return c.json({ error: 'shop_not_found' }, 404);
   }
 

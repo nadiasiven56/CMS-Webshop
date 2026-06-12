@@ -13,15 +13,20 @@ export function isAllowedMime(mime: string): mime is AllowedImageMime {
 }
 
 /**
- * Sanitize a filename stem — remove special chars, lowercase, trim
+ * Sanitize a filename stem: strip de extensie, NFKD-accenten weg, lowercase,
+ * special chars → dashes (collapsed), max 50 tekens. '../../etc/passwd' wordt
+ * 'etc-passwd' (path-traversal kan nooit overleven).
  */
 export function sanitizeFilenameStem(name: string): string {
   return name
+    .replace(/\.[^./\\]+$/, '') // extensie eraf (laatste .xyz zonder padscheiders)
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '') // combining accents weg (U+0300–U+036F)
     .toLowerCase()
     .replace(/[^a-z0-9\-_]/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
-    .slice(0, 100);
+    .slice(0, 50);
 }
 
 /** Extensie per toegestane mime, fallback op de bestandsnaam. */

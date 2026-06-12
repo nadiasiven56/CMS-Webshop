@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as RegisterRouteImport } from './routes/register'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LaunchRouteImport } from './routes/launch'
 import { Route as AppRouteImport } from './routes/_app'
@@ -68,6 +69,11 @@ import { Route as AppCmsBlogRouteImport } from './routes/_app/cms.blog'
 import { Route as AppChannelsMatrixRouteImport } from './routes/_app/channels.matrix'
 import { Route as AppAccountingKoppelingenRouteImport } from './routes/_app/accounting.koppelingen'
 
+const RegisterRoute = RegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -363,6 +369,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/launch': typeof LaunchRoute
   '/login': typeof LoginRoute
+  '/register': typeof RegisterRoute
   '/accounting': typeof AppAccountingRouteWithChildren
   '/analytics': typeof AppAnalyticsRouteWithChildren
   '/audit-log': typeof AppAuditLogRouteWithChildren
@@ -421,6 +428,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/launch': typeof LaunchRoute
   '/login': typeof LoginRoute
+  '/register': typeof RegisterRoute
   '/finance': typeof AppFinanceRoute
   '/ledger': typeof AppLedgerRoute
   '/locations': typeof AppLocationsRoute
@@ -466,6 +474,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/launch': typeof LaunchRoute
   '/login': typeof LoginRoute
+  '/register': typeof RegisterRoute
   '/_app/accounting': typeof AppAccountingRouteWithChildren
   '/_app/analytics': typeof AppAnalyticsRouteWithChildren
   '/_app/audit-log': typeof AppAuditLogRouteWithChildren
@@ -528,6 +537,7 @@ export interface FileRouteTypes {
     | '/'
     | '/launch'
     | '/login'
+    | '/register'
     | '/accounting'
     | '/analytics'
     | '/audit-log'
@@ -586,6 +596,7 @@ export interface FileRouteTypes {
   to:
     | '/launch'
     | '/login'
+    | '/register'
     | '/finance'
     | '/ledger'
     | '/locations'
@@ -630,6 +641,7 @@ export interface FileRouteTypes {
     | '/_app'
     | '/launch'
     | '/login'
+    | '/register'
     | '/_app/accounting'
     | '/_app/analytics'
     | '/_app/audit-log'
@@ -691,10 +703,18 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LaunchRoute: typeof LaunchRoute
   LoginRoute: typeof LoginRoute
+  RegisterRoute: typeof RegisterRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/register': {
+      id: '/register'
+      path: '/register'
+      fullPath: '/register'
+      preLoaderRoute: typeof RegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -1385,6 +1405,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LaunchRoute: LaunchRoute,
   LoginRoute: LoginRoute,
+  RegisterRoute: RegisterRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

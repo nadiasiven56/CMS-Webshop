@@ -1,7 +1,7 @@
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import { LogOut } from 'lucide-react';
 import { useAuth, useLogout } from '@/lib/auth';
-import { NAV_SECTIONS } from '@/lib/nav-items';
+import { navSectionsForRole } from '@/lib/nav-items';
 
 function isActive(pathname: string, to: string): boolean {
   if (to === '/') return pathname === '/';
@@ -15,6 +15,8 @@ export function Sidebar() {
   const navigate = useNavigate();
   const email = auth.data?.email ?? 'admin@webshop-crm.local';
   const initials = email.slice(0, 2).toUpperCase();
+  // Role-bewuste navigatie: tenants ('user') zien geen admin-only secties.
+  const sections = navSectionsForRole(auth.data?.role);
 
   async function onLogout() {
     await logout.mutateAsync();
@@ -30,7 +32,7 @@ export function Sidebar() {
       </div>
 
       <nav aria-label="Hoofdnavigatie">
-        {NAV_SECTIONS.map((section, si) => (
+        {sections.map((section, si) => (
           <div key={si}>
             {section.label && <div className="nav-section-label">{section.label}</div>}
             {section.items.map((item) => {

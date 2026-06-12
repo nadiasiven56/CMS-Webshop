@@ -35,6 +35,7 @@ import { logger } from '../../lib/logger.js';
 import type { AuthVariables } from '../../middleware/auth.js';
 import { shops } from '../../db/schema/shops.js';
 import { runInTransactionWithAudit } from '../../domain/stock/transaction-helpers.js';
+import { canAccessShop } from '../../lib/access.js';
 import { isUuid } from '../../domain/shops/shop-context.js';
 
 /** Prefix voor publishable storefront-tokens (webshop-crm publishable key). */
@@ -89,6 +90,10 @@ export function registerStorefrontTokenRoutes(
     if (!isUuid(id)) {
       return c.json({ error: 'invalid_id' }, 400);
     }
+    // Multi-user: non-member krijgt 404 (geen existence-leak).
+    if (!(await canAccessShop(c.get('user'), id))) {
+      return c.json({ error: 'not_found' }, 404);
+    }
     const [shop] = await db
       .select({ id: shops.id, hash: shops.storefrontTokenHash })
       .from(shops)
@@ -108,6 +113,10 @@ export function registerStorefrontTokenRoutes(
       return c.json({ error: 'invalid_id' }, 400);
     }
     const user = c.get('user');
+    // Multi-user: non-member krijgt 404 (geen existence-leak).
+    if (!(await canAccessShop(user, id))) {
+      return c.json({ error: 'not_found' }, 404);
+    }
     const ip = c.req.header('x-forwarded-for') ?? c.req.header('x-real-ip') ?? null;
 
     const [existing] = await db
@@ -160,6 +169,10 @@ export function registerStorefrontTokenRoutes(
       return c.json({ error: 'invalid_id' }, 400);
     }
     const user = c.get('user');
+    // Multi-user: non-member krijgt 404 (geen existence-leak).
+    if (!(await canAccessShop(user, id))) {
+      return c.json({ error: 'not_found' }, 404);
+    }
     const ip = c.req.header('x-forwarded-for') ?? c.req.header('x-real-ip') ?? null;
 
     const [existing] = await db

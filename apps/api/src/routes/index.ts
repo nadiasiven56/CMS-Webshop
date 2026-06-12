@@ -11,7 +11,7 @@
  */
 import { Hono } from 'hono';
 import { authRoutes } from './auth.js';
-import type { AuthVariables } from '../middleware/auth.js';
+import { requireAdmin, type AuthVariables } from '../middleware/auth.js';
 
 // Feature-agent imports (Fase 1 ronde 2 — geactiveerd door finalizer):
 import { productRoutes } from './products/index.js';
@@ -47,6 +47,31 @@ import { reviewRoutes } from './reviews/index.js';
 import { auditRoutes } from './audit/index.js';
 
 export const apiRoutes = new Hono<{ Variables: AuthVariables }>();
+
+// ─── Multi-user lock-down ────────────────────────────────────
+// Tenants (role 'user') zien alleen hun eigen shops/producten/orders; die
+// scoping zit in de route-handlers zelf (lib/access.ts). De modules hieronder
+// zijn platform-breed (geconsolideerde finance, marketplace-kanalen, magazijn-
+// locaties, gebruikersbeheer, integraties) en blijven ADMIN-ONLY.
+// LET OP: /payments, /storefront en /feeds/public horen hier NIET bij (publiek).
+const ADMIN_ONLY = [
+  'purchasing',
+  'finance',
+  'channels',
+  'locations',
+  'admin',
+  'shipping',
+  'accounting',
+  'notifications',
+  'analytics',
+  'webhooks',
+  'reviews',
+  'audit',
+] as const;
+for (const seg of ADMIN_ONLY) {
+  apiRoutes.use(`/${seg}`, requireAdmin);
+  apiRoutes.use(`/${seg}/*`, requireAdmin);
+}
 
 apiRoutes.route('/auth', authRoutes);
 

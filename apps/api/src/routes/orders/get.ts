@@ -15,6 +15,7 @@ import { orderFulfillments } from '../../db/schema/order-fulfillments.js';
 import { returns } from '../../db/schema/returns.js';
 import { returnItems } from '../../db/schema/return-items.js';
 import { customers } from '../../db/schema/customers.js';
+import { canAccessShop } from '../../lib/access.js';
 import { isUuid } from '../products/_validate.js';
 import {
   toOrderCore,
@@ -33,6 +34,10 @@ export async function getOrder(c: Context): Promise<Response> {
 
   const [order] = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
   if (!order) {
+    return c.json({ error: 'not_found' }, 404);
+  }
+  // Multi-user: shop niet toegankelijk → zelfde 404 (geen existence-leak).
+  if (!(await canAccessShop(c.get('user'), order.shopId))) {
     return c.json({ error: 'not_found' }, 404);
   }
 

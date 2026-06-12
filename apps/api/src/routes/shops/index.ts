@@ -30,6 +30,13 @@ import { shopProducts } from '../../db/schema/shop-products.js';
 import { products } from '../../db/schema/products.js';
 import { runInTransactionWithAudit } from '../../domain/stock/transaction-helpers.js';
 import { encryptCredentials } from '../../lib/channel-crypto.js';
+import {
+  accessibleShopIds,
+  addShopMember,
+  canAccessProduct,
+  canAccessShop,
+  isAdmin,
+} from '../../lib/access.js';
 import { isUuid } from '../../domain/shops/shop-context.js';
 import {
   ShopCreateSchema,
@@ -40,6 +47,7 @@ import {
 } from './_schemas.js';
 import { toShopDto, toShopProductDto } from './_serialize.js';
 import { registerStorefrontTokenRoutes } from './storefront-token.js';
+import { registerMemberRoutes } from './members.js';
 
 export const shopsRoutes = new Hono<{ Variables: AuthVariables }>();
 
@@ -51,16 +59,28 @@ shopsRoutes.use('*', requireAuth);
 // `/api/shops`. Geen extra mount in routes/index.ts nodig.
 registerStorefrontTokenRoutes(shopsRoutes);
 
+// Multi-user: per-shop members-beheer (lijst/add/remove). Zelfde patroon —
+// geregistreerd op deze router, dus geen extra mount nodig.
+registerMemberRoutes(shopsRoutes);
+
 // ─── GET /api/shops — list ───────────────────────────────────
 
 shopsRoutes.get('/', async (c) => {
+  const user = c.get('user');
   const parsed = ShopListQuerySchema.safeParse(c.req.query());
   if (!parsed.success) {
     return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
   }
   const { limit, offset, status, search } = parsed.data;
 
+  // Multi-user: non-admin ziet alleen member-shops. `null` = admin/onbeperkt.
+  const memberShopIds = await accessibleShopIds(user);
+  if (memberShopIds !== null && memberShopIds.length === 0) {
+    return c.json({ items: [], total: 0, limit, offset });
+  }
+
   const conditions = [];
+  if (memberShopIds !== null) conditions.push(inArray(shops.id, memberShopIds));
   if (status) conditions.push(eq(shops.status, status));
   if (search) {
     const term = `%${search}%`;
@@ -154,6 +174,12 @@ shopsRoutes.post('/', async (c) => {
       return row;
     });
 
+    // Multi-user: de aanmakende tenant wordt owner-member van zijn shop.
+    // Admin heeft geen membership nodig (ziet alles).
+    if (!isAdmin(user)) {
+      await addShopMember(shop.id, user.id, 'owner');
+    }
+
     logger.info({ shopId: shop.id, slug: shop.slug, actor: user.id }, 'shop created');
     return c.json({ shop: toShopDto(shop) }, 201);
   } catch (err) {
@@ -168,6 +194,10 @@ shopsRoutes.get('/:id', async (c) => {
   const id = c.req.param('id');
   if (!isUuid(id)) {
     return c.json({ error: 'invalid_id' }, 400);
+  }
+  // Multi-user: non-member krijgt 404 (geen existence-leak).
+  if (!(await canAccessShop(c.get('user'), id))) {
+    return c.json({ error: 'not_found' }, 404);
   }
   const [shop] = await db.select().from(shops).where(eq(shops.id, id)).limit(1);
   if (!shop) {
@@ -184,6 +214,10 @@ shopsRoutes.patch('/:id', async (c) => {
     return c.json({ error: 'invalid_id' }, 400);
   }
   const user = c.get('user');
+  // Multi-user: non-member krijgt 404 (geen existence-leak).
+  if (!(await canAccessShop(user, id))) {
+    return c.json({ error: 'not_found' }, 404);
+  }
   const body = await c.req.json().catch(() => null);
   const parsed = ShopUpdateSchema.safeParse(body);
   if (!parsed.success) {
@@ -271,6 +305,10 @@ shopsRoutes.delete('/:id', async (c) => {
     return c.json({ error: 'invalid_id' }, 400);
   }
   const user = c.get('user');
+  // Multi-user: non-member krijgt 404 (geen existence-leak).
+  if (!(await canAccessShop(user, id))) {
+    return c.json({ error: 'not_found' }, 404);
+  }
   const ip = c.req.header('x-forwarded-for') ?? c.req.header('x-real-ip') ?? null;
 
   const [existing] = await db.select().from(shops).where(eq(shops.id, id)).limit(1);
@@ -301,6 +339,10 @@ shopsRoutes.get('/:id/products', async (c) => {
   const id = c.req.param('id');
   if (!isUuid(id)) {
     return c.json({ error: 'invalid_id' }, 400);
+  }
+  // Multi-user: non-member krijgt 404 (geen existence-leak).
+  if (!(await canAccessShop(c.get('user'), id))) {
+    return c.json({ error: 'shop_not_found' }, 404);
   }
   const parsed = ShopProductsQuerySchema.safeParse(c.req.query());
   if (!parsed.success) {
@@ -352,6 +394,10 @@ shopsRoutes.put('/:id/products/:productId', async (c) => {
     return c.json({ error: 'invalid_id' }, 400);
   }
   const user = c.get('user');
+  // Multi-user: non-member krijgt 404 (geen existence-leak).
+  if (!(await canAccessShop(user, id))) {
+    return c.json({ error: 'shop_not_found' }, 404);
+  }
   const body = await c.req.json().catch(() => null);
   const parsed = ShopProductUpsertSchema.safeParse(body);
   if (!parsed.success) {
@@ -366,11 +412,22 @@ shopsRoutes.put('/:id/products/:productId', async (c) => {
     return c.json({ error: 'shop_not_found' }, 404);
   }
   const [product] = await db
-    .select({ id: products.id, slug: products.slug, title: products.title, status: products.status })
+    .select({
+      id: products.id,
+      slug: products.slug,
+      title: products.title,
+      status: products.status,
+      ownerUserId: products.ownerUserId,
+    })
     .from(products)
     .where(eq(products.id, productId))
     .limit(1);
   if (!product) {
+    return c.json({ error: 'product_not_found' }, 404);
+  }
+  // Multi-user: tenant mag alleen EIGEN producten publiceren. Producten van
+  // anderen/platform-catalogus → 404 (geen existence-leak).
+  if (!canAccessProduct(user, product)) {
     return c.json({ error: 'product_not_found' }, 404);
   }
 

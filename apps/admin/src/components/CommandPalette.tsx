@@ -13,7 +13,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { Search, CornerDownLeft, Plus, ArrowRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { NAV_ITEMS_FLAT } from '@/lib/nav-items';
+import { NAV_ITEMS_FLAT, canAccessNavItem } from '@/lib/nav-items';
+import { useAuth } from '@/lib/auth';
 
 const OPEN_EVENT = 'webshop-crm:open-command-palette';
 
@@ -38,16 +39,17 @@ const QUICK_ACTIONS: Command[] = [
   { id: 'new-customer', label: 'Nieuwe klant', to: '/customers', icon: Plus, hint: 'Open klanten', group: 'Acties', keywords: 'customer toevoegen' },
 ];
 
-const NAV_COMMANDS: Command[] = NAV_ITEMS_FLAT.map((item) => ({
-  id: `nav-${item.to}`,
-  label: item.label,
-  to: item.to,
-  icon: item.icon,
-  keywords: item.keywords,
-  group: item.section ?? 'Navigatie',
-}));
-
-const ALL_COMMANDS: Command[] = [...QUICK_ACTIONS, ...NAV_COMMANDS];
+/** Nav-commands voor deze role — admin-only items blijven voor 'user' verborgen. */
+function navCommandsForRole(role: string | undefined): Command[] {
+  return NAV_ITEMS_FLAT.filter((item) => canAccessNavItem(item, role)).map((item) => ({
+    id: `nav-${item.to}`,
+    label: item.label,
+    to: item.to,
+    icon: item.icon,
+    keywords: item.keywords,
+    group: item.section ?? 'Navigatie',
+  }));
+}
 
 function score(cmd: Command, q: string): number {
   if (!q) return 1;
@@ -69,6 +71,8 @@ function score(cmd: Command, q: string): number {
 
 export function CommandPalette() {
   const navigate = useNavigate();
+  const auth = useAuth();
+  const role = auth.data?.role;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIdx, setActiveIdx] = useState(0);
@@ -122,14 +126,19 @@ export function CommandPalette() {
     };
   }, [open]);
 
+  const allCommands = useMemo(
+    () => [...QUICK_ACTIONS, ...navCommandsForRole(role)],
+    [role],
+  );
+
   const results = useMemo(() => {
     const q = query.trim();
-    return ALL_COMMANDS.map((cmd) => ({ cmd, s: score(cmd, q) }))
+    return allCommands.map((cmd) => ({ cmd, s: score(cmd, q) }))
       .filter((r) => r.s > 0)
       .sort((a, b) => b.s - a.s)
       .slice(0, 12)
       .map((r) => r.cmd);
-  }, [query]);
+  }, [query, allCommands]);
 
   // Houd activeIdx binnen bereik bij wijzigende resultaten.
   useEffect(() => {

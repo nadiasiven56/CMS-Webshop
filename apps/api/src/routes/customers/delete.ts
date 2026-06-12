@@ -14,12 +14,26 @@ import type { Context } from 'hono';
 import { eq } from 'drizzle-orm';
 import { db } from '../../lib/db.js';
 import { customers } from '../../db/schema/index.js';
+import { canAccessShop } from '../../lib/access.js';
 import { isUuid } from './_validate.js';
 
 export async function deleteCustomer(c: Context): Promise<Response> {
   const id = c.req.param('id');
   if (!isUuid(id)) {
     return c.json({ error: 'invalid_id' }, 400);
+  }
+
+  // Multi-user: shop niet toegankelijk → zelfde 404 (geen existence-leak).
+  const [existing] = await db
+    .select({ shopId: customers.shopId })
+    .from(customers)
+    .where(eq(customers.id, id))
+    .limit(1);
+  if (!existing) {
+    return c.json({ error: 'not_found' }, 404);
+  }
+  if (!(await canAccessShop(c.get('user'), existing.shopId))) {
+    return c.json({ error: 'not_found' }, 404);
   }
 
   const deleted = await db

@@ -21,6 +21,7 @@ import { orders } from '../../db/schema/orders.js';
 import { orderFulfillments } from '../../db/schema/order-fulfillments.js';
 import { locations } from '../../db/schema/locations.js';
 import { runInTransactionWithAudit } from '../../domain/stock/transaction-helpers.js';
+import { canAccessShop } from '../../lib/access.js';
 import { isUuid } from '../products/_validate.js';
 import { FulfillmentCreateSchema } from './_schemas.js';
 import { toOrderCore, toOrderFulfillmentDto } from './_serialize.js';
@@ -30,8 +31,16 @@ export async function listFulfillments(c: Context): Promise<Response> {
   const id = c.req.param('id');
   if (!isUuid(id)) return c.json({ error: 'invalid_id' }, 400);
 
-  const [order] = await db.select({ id: orders.id }).from(orders).where(eq(orders.id, id)).limit(1);
+  const [order] = await db
+    .select({ id: orders.id, shopId: orders.shopId })
+    .from(orders)
+    .where(eq(orders.id, id))
+    .limit(1);
   if (!order) return c.json({ error: 'not_found' }, 404);
+  // Multi-user: shop niet toegankelijk → zelfde 404 (geen existence-leak).
+  if (!(await canAccessShop(c.get('user'), order.shopId))) {
+    return c.json({ error: 'not_found' }, 404);
+  }
 
   const rows = await db
     .select()
@@ -56,6 +65,10 @@ export async function createFulfillment(c: Context): Promise<Response> {
 
   const [order] = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
   if (!order) return c.json({ error: 'not_found' }, 404);
+  // Multi-user: shop niet toegankelijk → zelfde 404 (geen existence-leak).
+  if (!(await canAccessShop(user, order.shopId))) {
+    return c.json({ error: 'not_found' }, 404);
+  }
 
   if (input.locationId) {
     const [loc] = await db

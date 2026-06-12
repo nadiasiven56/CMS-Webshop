@@ -96,7 +96,7 @@ const ACTIVITY_ICONS: Record<string, { icon: any; cls: string }> = {
 function DashboardPage() {
   const auth = useAuth();
   const user = auth.data;
-  const { shops, activeShopId } = useActiveShop();
+  const { shops, activeShopId, isLoading: shopsLoading } = useActiveShop();
 
   // ── Filter-state: shop (of "alle") + kanaal ──────────────────
   // Default = de actieve shop, zodat het dashboard meteen relevant is.
@@ -124,6 +124,32 @@ function DashboardPage() {
     day: 'numeric',
     month: 'long',
   }).format(new Date());
+
+  // Onboarding: net geregistreerd account zonder shops → vriendelijke start
+  // i.p.v. een leeg KPI-dashboard. CTA leidt naar de bestaande create-flow.
+  if (!shopsLoading && shops.length === 0) {
+    return (
+      <div>
+        <header style={{ marginBottom: 20 }}>
+          <h1 className="page-title">
+            {greeting()}{user ? `, ${user.email.split('@')[0]}` : ''}.
+          </h1>
+          <p className="page-subtitle" style={{ textTransform: 'capitalize' }}>{today}</p>
+        </header>
+        <EmptyState
+          icon={Store}
+          title="Welkom! Maak je eerste shop"
+          description="Je hebt nog geen shop. Maak er één aan om producten te beheren, orders te ontvangen en je eigen webshop te koppelen."
+          action={
+            <Link to="/shops" className="btn btn-primary btn-icon-leading">
+              <Plus size={14} />
+              Maak je eerste shop
+            </Link>
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <div>

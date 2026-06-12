@@ -15,6 +15,7 @@ import { db } from '../../lib/db.js';
 import { shops } from '../../db/schema/shops.js';
 import { orders } from '../../db/schema/orders.js';
 import { orderItems } from '../../db/schema/order-items.js';
+import { canAccessShop } from '../../lib/access.js';
 import { runInTransactionWithAudit } from '../../domain/stock/transaction-helpers.js';
 import { nextOrderNumber } from '../../domain/orders/order-number.js';
 import { computeLine, computeOrderTotals, computeOrderMargin } from '../../domain/orders/order-math.js';
@@ -31,6 +32,12 @@ export async function createOrder(c: Context): Promise<Response> {
     return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
   }
   const input = parsed.data;
+
+  // Multi-user: create alleen op een toegankelijke shop. Zelfde 404-shape als
+  // een onbestaande shop → geen existence-leak.
+  if (!(await canAccessShop(user, input.shopId))) {
+    return c.json({ error: 'shop_not_found' }, 404);
+  }
 
   // Bereken regels (gooit bij invalide money/qty → vang als 400)
   let lines;

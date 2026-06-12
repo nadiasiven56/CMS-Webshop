@@ -76,6 +76,23 @@ Multipart-allowlist: jpeg/png/webp/gif/svg/avif/pdf, max 20 MB. Storage-key:
 | PATCH | `/api/cms/redirects/:id` | |
 | DELETE | `/api/cms/redirects/:id` | |
 
+## Multi-user (toegevoegd door Atlas, feat/multi-user)
+
+Shop-resolutie (`_validate.ts: resolveShopId/resolveShopFromRequest`) past nu de
+membership-check uit `lib/access.ts` toe: een non-admin die geen member van de
+opgegeven shop is krijgt hetzelfde `404 shop_not_found` als bij een onbekende
+shop (geen existence-leak). Geldt voor ALLE pages/blocks/menus/blog/redirects-
+routes (lists, details én mutaties) en voor shop-scoped media.
+
+Uitzondering `cms_media` met `shop_id NULL` (globaal):
+- non-admin mag globale media **lezen** (gedeelde assets, `scope=global`/`all`);
+- **muteren/verwijderen** van globale media → `403 forbidden`;
+- non-admin **uploads/registraties** vereisen een eigen shop (`400 shop_required`
+  zonder shop-ref).
+
+Extra dekking in `src/routes/shops/__tests__/multi-user.real-db.test.ts`
+(cms-list-scoping + globale-media-regels).
+
 ## Schema-verzoeken (indien kolom mist)
 
 **Geen.** Alle tabellen (`cms_pages`, `cms_blocks`, `cms_menus`,

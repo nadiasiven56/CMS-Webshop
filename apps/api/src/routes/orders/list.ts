@@ -14,10 +14,12 @@ import { db } from '../../lib/db.js';
 import { orders } from '../../db/schema/orders.js';
 import { orderItems } from '../../db/schema/order-items.js';
 import { customers } from '../../db/schema/customers.js';
+import { accessibleShopIds } from '../../lib/access.js';
 import { ListQuerySchema } from './_schemas.js';
 import { toOrderCore } from './_serialize.js';
 
 export async function listOrders(c: Context): Promise<Response> {
+  const user = c.get('user');
   const parsed = ListQuerySchema.safeParse(c.req.query());
   if (!parsed.success) {
     return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
@@ -25,8 +27,21 @@ export async function listOrders(c: Context): Promise<Response> {
   const { shop_id, status, financial_status, fulfillment_status, channel, search, limit, offset } =
     parsed.data;
 
+  // Multi-user: non-admin ziet alleen member-shops (null = admin/onbeperkt).
+  const memberShopIds = await accessibleShopIds(user);
+
   const conditions = [];
-  if (shop_id) conditions.push(eq(orders.shopId, shop_id));
+  if (shop_id) {
+    // Expliciet shop-filter: alleen als die shop toegankelijk is — anders 404
+    // (zelfde shape als not-found, voorkomt existence-leak).
+    if (memberShopIds && !memberShopIds.includes(shop_id)) {
+      return c.json({ error: 'not_found' }, 404);
+    }
+    conditions.push(eq(orders.shopId, shop_id));
+  } else if (memberShopIds) {
+    // Lege lijst → inArray rendert `false` → lege resultaten.
+    conditions.push(inArray(orders.shopId, memberShopIds));
+  }
   if (status) conditions.push(eq(orders.status, status));
   if (financial_status) conditions.push(eq(orders.financialStatus, financial_status));
   if (fulfillment_status) conditions.push(eq(orders.fulfillmentStatus, fulfillment_status));

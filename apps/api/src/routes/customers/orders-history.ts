@@ -15,6 +15,7 @@ import type { Context } from 'hono';
 import { desc, eq, count } from 'drizzle-orm';
 import { db } from '../../lib/db.js';
 import { customers, orders } from '../../db/schema/index.js';
+import { canAccessShop } from '../../lib/access.js';
 import { OrdersHistoryQuerySchema } from './_schemas.js';
 import { toCustomerOrderDto } from './_serialize.js';
 import { isUuid } from './_validate.js';
@@ -31,11 +32,15 @@ export async function listCustomerOrders(c: Context): Promise<Response> {
   const { limit, offset } = parsed.data;
 
   const [customer] = await db
-    .select({ id: customers.id })
+    .select({ id: customers.id, shopId: customers.shopId })
     .from(customers)
     .where(eq(customers.id, id))
     .limit(1);
   if (!customer) {
+    return c.json({ error: 'not_found' }, 404);
+  }
+  // Multi-user: shop niet toegankelijk → zelfde 404 (geen existence-leak).
+  if (!(await canAccessShop(c.get('user'), customer.shopId))) {
     return c.json({ error: 'not_found' }, 404);
   }
 

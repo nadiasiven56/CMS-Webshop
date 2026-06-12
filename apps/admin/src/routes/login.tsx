@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, Link, redirect, useNavigate } from '@tanstack/react-router';
 import { useState, type FormEvent } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useLogin, AUTH_QUERY_KEY, type AuthUser } from '@/lib/auth';
@@ -166,6 +166,21 @@ function LoginPage() {
         >
           {(login.isPending || submitting) ? 'Bezig…' : 'Inloggen'}
         </button>
+
+        <p
+          style={{
+            marginTop: 16,
+            marginBottom: 0,
+            fontSize: 12.5,
+            color: 'var(--theme-muted)',
+            textAlign: 'center',
+          }}
+        >
+          Nog geen account?{' '}
+          <Link to="/register" style={{ color: 'var(--theme-accent)' }}>
+            Account aanmaken
+          </Link>
+        </p>
 
         {DEMO_MODE && (
           <div className="login-hint">

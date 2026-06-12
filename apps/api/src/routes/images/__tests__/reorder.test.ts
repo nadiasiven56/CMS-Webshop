@@ -23,6 +23,7 @@ vi.mock('../../../db/schema/audit-log.js', () => ({ auditLog: { __name: 'audit' 
 
 vi.mock('drizzle-orm', () => ({
   eq: (_c: unknown, v: unknown) => ({ __id: v }),
+  and: (...parts: unknown[]) => ({ __and: parts }),
   inArray: (_c: unknown, v: unknown[]) => ({ __ids: v }),
   sql: (..._a: unknown[]) => ({ __sql: true }),
 }));

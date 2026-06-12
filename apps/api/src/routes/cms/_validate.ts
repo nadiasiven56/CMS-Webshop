@@ -12,6 +12,8 @@ import type { Context } from 'hono';
 import { eq, or } from 'drizzle-orm';
 import { db } from '../../lib/db.js';
 import { shops } from '../../db/schema/index.js';
+import { canAccessShop } from '../../lib/access.js';
+import type { AuthUser } from '../../lib/auth.js';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -23,9 +25,14 @@ export function isUuid(value: string | undefined | null): value is string {
 /**
  * Resolve een shop-referentie (uuid OF slug) naar een bestaande shop-id.
  * Returnt `null` als de ref ontbreekt of de shop niet bestaat.
+ *
+ * Multi-user: geef `user` mee om de membership-check toe te passen — een
+ * non-admin die geen member van de shop is krijgt óók `null` terug, zodat
+ * de caller een 404 geeft i.p.v. het bestaan van de shop te lekken.
  */
 export async function resolveShopId(
   ref: string | undefined | null,
+  user?: AuthUser,
 ): Promise<string | null> {
   if (!ref || typeof ref !== 'string' || ref.length === 0) return null;
   const trimmed = ref.trim();
@@ -40,7 +47,10 @@ export async function resolveShopId(
         : eq(shops.slug, trimmed),
     )
     .limit(1);
-  return row?.id ?? null;
+  const shopId = row?.id ?? null;
+  if (!shopId) return null;
+  if (user && !(await canAccessShop(user, shopId))) return null;
+  return shopId;
 }
 
 /**
@@ -58,12 +68,18 @@ export function readShopRef(c: Context): string | undefined {
 /**
  * Convenience: resolve de shop voor read-routes. Bij ontbreken/onbekend
  * geeft de caller zelf de juiste 400/404 terug.
+ *
+ * Multi-user: leest de ingelogde user van de context (gezet door requireAuth)
+ * en past de membership-check toe — een non-admin zonder membership op de
+ * shop krijgt `{ shopId: null, provided: true }` → caller geeft 404
+ * `shop_not_found` (geen existence-leak).
  */
 export async function resolveShopFromRequest(
   c: Context,
 ): Promise<{ shopId: string | null; provided: boolean }> {
   const ref = readShopRef(c);
   if (!ref) return { shopId: null, provided: false };
-  const shopId = await resolveShopId(ref);
+  const user = c.get('user') as AuthUser | undefined;
+  const shopId = await resolveShopId(ref, user);
   return { shopId, provided: true };
 }

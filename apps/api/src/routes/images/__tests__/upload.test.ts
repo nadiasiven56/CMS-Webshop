@@ -19,7 +19,7 @@ const dbState = {
     position: number;
     createdAt: Date;
   }>,
-  products: [] as Array<{ id: string }>,
+  products: [] as Array<{ id: string; ownerUserId?: string | null }>,
   audit: [] as Array<unknown>,
 };
 
@@ -267,6 +267,7 @@ vi.mock('../../../lib/db.js', () => {
 vi.mock('drizzle-orm', async () => {
   return {
     eq: (_col: unknown, val: unknown) => ({ __id: val }),
+    and: (...parts: unknown[]) => ({ __and: parts }),
     inArray: (_col: unknown, vals: unknown[]) => ({ __ids: vals }),
     sql: ((..._a: unknown[]) => ({ __sql: true })) as unknown,
   };
@@ -307,10 +308,13 @@ vi.mock('../../../lib/storage/index.js', async () => {
   };
 });
 
-// Auth mock — always returns a fixed user.
+// Auth mock — mutable user zodat multi-user-tests van rol kunnen wisselen.
+const authState = {
+  user: { id: 'user-test-1', email: 'admin@test', role: 'admin' },
+};
 vi.mock('../../../middleware/auth.js', () => ({
   requireAuth: async (c: { set: (k: string, v: unknown) => void }, next: () => Promise<void>) => {
-    c.set('user', { id: 'user-test-1', email: 'admin@test', role: 'admin' });
+    c.set('user', authState.user);
     await next();
   },
 }));
@@ -341,6 +345,7 @@ function fakeFile(name: string, type: string, content: string | Buffer): File {
 }
 
 beforeEach(() => {
+  authState.user = { id: 'user-test-1', email: 'admin@test', role: 'admin' };
   dbState.productImages = [];
   dbState.products = [{ id: '11111111-1111-4111-8111-111111111111' }];
   dbState.audit = [];
@@ -461,6 +466,74 @@ describe('POST /api/images — product_id niet gevonden', () => {
     fd.set('product_id', '99999999-9999-4999-8999-999999999999');
     const res = await app.request('/api/images', { method: 'POST', body: fd });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /api/images — multi-user scoping', () => {
+  const USER_A = { id: 'aaaaaaaa-0000-4000-8000-00000000000a', email: 'a@test', role: 'user' };
+  const PROD = '11111111-1111-4111-8111-111111111111';
+
+  it("403 forbidden: losse upload (geen product_id) door role 'user'", async () => {
+    authState.user = { ...USER_A };
+    const app = buildApp();
+    const fd = new FormData();
+    fd.set('file', fakeFile('loose.png', 'image/png', 'png-bytes'));
+
+    const res = await app.request('/api/images', { method: 'POST', body: fd });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('forbidden');
+    expect(storageState.putCalls).toHaveLength(0);
+    expect(dbState.productImages).toHaveLength(0);
+  });
+
+  it("404 product_not_found: upload aan andermans product door role 'user'", async () => {
+    authState.user = { ...USER_A };
+    dbState.products = [{ id: PROD, ownerUserId: 'bbbbbbbb-0000-4000-8000-00000000000b' }];
+    const app = buildApp();
+    const fd = new FormData();
+    fd.set('file', fakeFile('a.png', 'image/png', 'x'));
+    fd.set('product_id', PROD);
+
+    const res = await app.request('/api/images', { method: 'POST', body: fd });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('product_not_found');
+    expect(storageState.putCalls).toHaveLength(0);
+  });
+
+  it("404: upload aan platform-product (owner = null) door role 'user'", async () => {
+    authState.user = { ...USER_A };
+    dbState.products = [{ id: PROD, ownerUserId: null }];
+    const app = buildApp();
+    const fd = new FormData();
+    fd.set('file', fakeFile('a.png', 'image/png', 'x'));
+    fd.set('product_id', PROD);
+
+    const res = await app.request('/api/images', { method: 'POST', body: fd });
+    expect(res.status).toBe(404);
+  });
+
+  it("201: upload aan eigen product door role 'user'", async () => {
+    authState.user = { ...USER_A };
+    dbState.products = [{ id: PROD, ownerUserId: USER_A.id }];
+    const app = buildApp();
+    const fd = new FormData();
+    fd.set('file', fakeFile('mine.jpg', 'image/jpeg', 'bytes'));
+    fd.set('product_id', PROD);
+
+    const res = await app.request('/api/images', { method: 'POST', body: fd });
+    expect(res.status).toBe(201);
+    expect(dbState.productImages).toHaveLength(1);
+  });
+
+  it('201: losse upload door admin blijft werken', async () => {
+    const app = buildApp();
+    const fd = new FormData();
+    fd.set('file', fakeFile('loose.png', 'image/png', 'png-bytes'));
+
+    const res = await app.request('/api/images', { method: 'POST', body: fd });
+    expect(res.status).toBe(201);
   });
 });
 

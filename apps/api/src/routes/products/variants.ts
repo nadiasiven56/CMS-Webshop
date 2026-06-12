@@ -18,6 +18,7 @@ import {
 import { writeProductAudit } from '../../domain/products/audit.js';
 import { toVariantDto } from './_serialize.js';
 import { isUuid } from './_validate.js';
+import { canAccessProduct } from '../../lib/access.js';
 
 export async function addVariant(c: Context): Promise<Response> {
   const productId = c.req.param('id');
@@ -34,11 +35,12 @@ export async function addVariant(c: Context): Promise<Response> {
 
   const inserted = await db.transaction(async (tx) => {
     const [product] = await tx
-      .select({ id: products.id })
+      .select({ id: products.id, ownerUserId: products.ownerUserId })
       .from(products)
       .where(eq(products.id, productId))
       .limit(1);
-    if (!product) return null;
+    // Multi-user: andermans product = 404 (zelfde shape als onbestaand).
+    if (!product || !canAccessProduct(user, product)) return null;
 
     const [row] = await tx
       .insert(variants)
@@ -96,6 +98,14 @@ export async function updateVariantHandler(c: Context): Promise<Response> {
   const input = parsed.data;
 
   const result = await db.transaction(async (tx) => {
+    // Multi-user: andermans product = 404 (zelfde shape als onbestaand).
+    const [product] = await tx
+      .select({ id: products.id, ownerUserId: products.ownerUserId })
+      .from(products)
+      .where(eq(products.id, productId))
+      .limit(1);
+    if (!product || !canAccessProduct(user, product)) return null;
+
     const [existing] = await tx
       .select()
       .from(variants)
@@ -158,6 +168,14 @@ export async function deleteVariantHandler(c: Context): Promise<Response> {
   const ip = c.req.header('x-forwarded-for') ?? c.req.header('x-real-ip') ?? null;
 
   const result = await db.transaction(async (tx) => {
+    // Multi-user: andermans product = 404 (zelfde shape als onbestaand).
+    const [product] = await tx
+      .select({ id: products.id, ownerUserId: products.ownerUserId })
+      .from(products)
+      .where(eq(products.id, productId))
+      .limit(1);
+    if (!product || !canAccessProduct(user, product)) return null;
+
     const [existing] = await tx
       .select()
       .from(variants)

@@ -323,6 +323,15 @@ export function ConnectPanel({ shop }: { shop: ShopDto }) {
         <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Koppel je webshop</h2>
       </div>
 
+      <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.55, marginBottom: 12, maxWidth: 720 }}>
+        Sluit hier je eigen (externe) webshop aan: genereer een storefront-token en stuur dat bij
+        elke storefront-call mee als header. Bijvoorbeeld:{' '}
+        <code style={{ fontFamily: 'var(--font-mono, monospace)' }}>
+          {`fetch(url, { headers: { 'X-Storefront-Token': 'wcrm_pk_…' } })`}
+        </code>{' '}
+        — of gebruik het insluit-snippet hieronder, dat dit automatisch doet.
+      </div>
+
       <div
         style={{
           display: 'grid',
@@ -539,6 +548,14 @@ export function ConnectPanel({ shop }: { shop: ShopDto }) {
               <div className="muted" style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Loader2 size={13} className="spin" />
                 Kanaal laden…
+              </div>
+            ) : channelsQuery.isError && asApiError(channelsQuery.error).status === 403 ? (
+              // Kanalen-module is admin-only: tenants kunnen het token + snippet
+              // gewoon gebruiken, alleen origins-beheer loopt via de beheerder.
+              <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+                Origins-beheer (CORS) is alleen beschikbaar voor beheerders. De
+                token-koppeling hiernaast werkt gewoon — vraag de platform-beheerder
+                om je shop-domein aan de toegestane origins toe te voegen.
               </div>
             ) : channel ? (
               <>

@@ -13,6 +13,7 @@ import { db } from '../../lib/db.js';
 import { products } from '../../db/schema/index.js';
 import { writeProductAudit } from '../../domain/products/audit.js';
 import { isUuid } from './_validate.js';
+import { canAccessProduct } from '../../lib/access.js';
 
 export async function deleteProduct(c: Context): Promise<Response> {
   const id = c.req.param('id');
@@ -24,7 +25,8 @@ export async function deleteProduct(c: Context): Promise<Response> {
 
   const result = await db.transaction(async (tx) => {
     const [existing] = await tx.select().from(products).where(eq(products.id, id)).limit(1);
-    if (!existing) return null;
+    // Multi-user: andermans product = 404 (zelfde shape als onbestaand).
+    if (!existing || !canAccessProduct(user, existing)) return null;
     if (existing.status === 'archived') {
       // idempotent — al gearchiveerd
       return existing;

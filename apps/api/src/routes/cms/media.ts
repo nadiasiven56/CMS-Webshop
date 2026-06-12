@@ -23,6 +23,7 @@ import { cmsMedia } from '../../db/schema/index.js';
 import { auditLog } from '../../db/schema/audit-log.js';
 import type { AuthVariables } from '../../middleware/auth.js';
 import { getStorage } from '../../lib/storage/index.js';
+import { canAccessShop, isAdmin } from '../../lib/access.js';
 import { isUuid, resolveShopId } from './_validate.js';
 import { invalid } from './_errors.js';
 import { makeMediaKey } from './_slug.js';
@@ -81,15 +82,18 @@ function isFileLike(v: unknown): v is File {
 
 // ─── LIST ────────────────────────────────────────────────────
 mediaRoutes.get('/', async (c) => {
+  const user = c.get('user');
   const parsed = listQuery.safeParse(c.req.query());
   if (!parsed.success) return invalid(c, parsed.error.flatten());
   const { folder, scope, limit, offset } = parsed.data;
 
   // shop is optioneel: zonder shop → alleen globaal (shop_id IS NULL).
+  // Multi-user: globale media is voor iedereen leesbaar (gedeelde assets);
+  // shop-media alleen voor admin/members (resolveShopId checkt membership).
   const shopRef = c.req.query('shop') ?? c.req.header('x-shop-id');
   let shopId: string | null = null;
   if (shopRef) {
-    shopId = await resolveShopId(shopRef);
+    shopId = await resolveShopId(shopRef, user);
     if (!shopId) return c.json({ error: 'shop_not_found', message: 'Onbekende shop.' }, 404);
   }
 
@@ -143,8 +147,15 @@ mediaRoutes.post('/', async (c) => {
 
     let shopId: string | null = null;
     if (input.shopId) {
-      shopId = await resolveShopId(input.shopId);
+      shopId = await resolveShopId(input.shopId, user);
       if (!shopId) return c.json({ error: 'shop_not_found' }, 404);
+    }
+    // Multi-user: alleen admin mag globale media (shop_id NULL) registreren.
+    if (!shopId && !isAdmin(user)) {
+      return c.json(
+        { error: 'shop_required', message: 'Geef een eigen shop mee (shopId).' },
+        400,
+      );
     }
 
     const [row] = await db
@@ -195,8 +206,15 @@ mediaRoutes.post('/', async (c) => {
     c.req.header('x-shop-id');
   let shopId: string | null = null;
   if (shopRef && typeof shopRef === 'string') {
-    shopId = await resolveShopId(shopRef);
+    shopId = await resolveShopId(shopRef, user);
     if (!shopId) return c.json({ error: 'shop_not_found' }, 404);
+  }
+  // Multi-user: alleen admin mag globale media (shop_id NULL) uploaden.
+  if (!shopId && !isAdmin(user)) {
+    return c.json(
+      { error: 'shop_required', message: 'Geef een eigen shop mee (shop=).' },
+      400,
+    );
   }
 
   const folderRaw = (parsedBody['folder'] as string | undefined) ?? 'uploads';
@@ -267,6 +285,17 @@ mediaRoutes.patch('/:id', async (c) => {
   const [existing] = await db.select().from(cmsMedia).where(eq(cmsMedia.id, id)).limit(1);
   if (!existing) return c.json({ error: 'not_found' }, 404);
 
+  // Multi-user: globale media (shop_id NULL) is read-only voor non-admin;
+  // shop-media alleen muteerbaar door admin/members (anders 404, geen leak).
+  if (!isAdmin(user)) {
+    if (existing.shopId === null) {
+      return c.json({ error: 'forbidden', message: 'Globale media is read-only.' }, 403);
+    }
+    if (!(await canAccessShop(user, existing.shopId))) {
+      return c.json({ error: 'not_found' }, 404);
+    }
+  }
+
   const patch: Partial<typeof cmsMedia.$inferInsert> = {};
   if (parsed.data.alt !== undefined) patch.alt = parsed.data.alt;
   if (parsed.data.folder !== undefined) patch.folder = parsed.data.folder;
@@ -284,6 +313,17 @@ mediaRoutes.delete('/:id', async (c) => {
 
   const [row] = await db.select().from(cmsMedia).where(eq(cmsMedia.id, id)).limit(1);
   if (!row) return c.json({ error: 'not_found' }, 404);
+
+  // Multi-user: globale media (shop_id NULL) is read-only voor non-admin;
+  // shop-media alleen verwijderbaar door admin/members (anders 404, geen leak).
+  if (!isAdmin(user)) {
+    if (row.shopId === null) {
+      return c.json({ error: 'forbidden', message: 'Globale media is read-only.' }, 403);
+    }
+    if (!(await canAccessShop(user, row.shopId))) {
+      return c.json({ error: 'not_found' }, 404);
+    }
+  }
 
   await db.delete(cmsMedia).where(eq(cmsMedia.id, id));
   await writeAudit(user.id, 'delete', id, { url: row.url, filename: row.filename }, ip(c));
