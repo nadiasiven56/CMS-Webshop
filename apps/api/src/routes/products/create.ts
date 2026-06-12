@@ -13,12 +13,16 @@
  * 400 invalid_request
  */
 import type { Context } from 'hono';
+import { asc, eq } from 'drizzle-orm';
 import { db } from '../../lib/db.js';
 import {
   products,
   variants,
   productOptions,
   productOptionValues,
+  inventoryItems,
+  inventoryLevels,
+  locations,
 } from '../../db/schema/index.js';
 import { ProductCreateInputSchema } from './_schemas.js';
 import { slugify } from '../../domain/products/slugify.js';
@@ -132,6 +136,34 @@ export async function createProduct(c: Context): Promise<Response> {
         .returning();
       if (!variantRow) throw new Error('variant insert returned no row');
       insertedVariants.push(variantRow);
+    }
+
+    // Inventory — elke variant krijgt een inventory_item, anders verschijnt het
+    // product niet in /api/stock en kan de voorraad nooit aangepast worden.
+    // Daarnaast een begin-level (0) op de hoofd-locatie zodat de voorraad-
+    // detailpagina meteen een locatie-rij toont om op te adjusten.
+    const [defaultLocation] = await tx
+      .select({ id: locations.id })
+      .from(locations)
+      .where(eq(locations.active, true))
+      .orderBy(asc(locations.priority), asc(locations.code))
+      .limit(1);
+
+    for (const v of insertedVariants) {
+      const [item] = await tx
+        .insert(inventoryItems)
+        .values({ variantId: v.id, sku: v.sku, tracked: true, requiresShipping: true })
+        .returning();
+      if (item && defaultLocation) {
+        await tx.insert(inventoryLevels).values({
+          itemId: item.id,
+          locationId: defaultLocation.id,
+          onHand: 0,
+          available: 0,
+          committed: 0,
+          incoming: 0,
+        });
+      }
     }
 
     // Audit

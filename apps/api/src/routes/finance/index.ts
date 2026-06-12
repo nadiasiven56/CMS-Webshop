@@ -358,6 +358,7 @@ financeRoutes.get('/ledger/aggregate', async (c) => {
 
 const pnlSchema = z.object({
   shop_id: z.string().uuid().optional(),
+  channel: z.string().trim().min(1).optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
@@ -367,10 +368,11 @@ financeRoutes.get('/pnl', async (c) => {
   if (!parsed.success) {
     return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
   }
-  const { shop_id, from, to } = parsed.data;
+  const { shop_id, channel, from, to } = parsed.data;
 
   const conds = [];
   if (shop_id) conds.push(eq(orders.shopId, shop_id));
+  if (channel) conds.push(eq(orders.channel, channel));
   conds.push(inArray(orders.financialStatus, ['paid', 'partially_refunded', 'refunded']));
   if (from) conds.push(gte(orders.createdAt, sql`${from}::timestamptz`));
   if (to) conds.push(lte(orders.createdAt, sql`(${to}::date + 1)::timestamptz`));
