@@ -116,6 +116,8 @@ app.use('*', async (c, next) => {
 //
 // Login: 10 pogingen / 15 min per IP.
 app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60_000, max: 10, keyPrefix: 'login' }));
+// Registratie (multi-user): 5 nieuwe accounts / uur per IP tegen spam.
+app.use('/api/auth/register', rateLimit({ windowMs: 60 * 60_000, max: 5, keyPrefix: 'register' }));
 // Publieke storefront-API: 120 req/min per IP.
 app.use('/api/storefront/*', rateLimit({ windowMs: 60_000, max: 120, keyPrefix: 'storefront' }));
 // Payments (incl. Mollie-webhook): 120 req/min per IP.

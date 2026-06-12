@@ -6,6 +6,9 @@
  *
  * Joint naar `inventory_items` voor SKU + naar `locations` voor name + naar
  * `users` voor actor-email.
+ *
+ * Multi-user: role 'user' ziet alleen movements van eigen producten
+ * (via variants -> products.owner_user_id); admin ziet alles.
  */
 import { Hono } from 'hono';
 import { z } from 'zod';
@@ -16,6 +19,9 @@ import { inventoryItems } from '../../db/schema/inventory-items.js';
 import { inventoryMovements } from '../../db/schema/inventory-movements.js';
 import { locations } from '../../db/schema/locations.js';
 import { users } from '../../db/schema/users.js';
+import { variants } from '../../db/schema/variants.js';
+import { products } from '../../db/schema/products.js';
+import { isAdmin } from '../../lib/access.js';
 
 export const movementsRoutes = new Hono<{ Variables: AuthVariables }>();
 
@@ -45,8 +51,12 @@ movementsRoutes.get('/', async (c) => {
     return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
   }
   const { page, pageSize, item_id, location_id, reason, from_date, to_date } = parsed.data;
+  const user = c.get('user');
 
   const whereParts = [];
+  // Multi-user: non-admins zien alleen movements van voorraad die bij hun
+  // eigen producten hoort (items -> variants -> products op owner_user_id).
+  if (!isAdmin(user)) whereParts.push(eq(products.ownerUserId, user.id));
   if (item_id) whereParts.push(eq(inventoryMovements.itemId, item_id));
   if (location_id) whereParts.push(eq(inventoryMovements.locationId, location_id));
   if (reason) whereParts.push(eq(inventoryMovements.reason, reason));
@@ -54,7 +64,7 @@ movementsRoutes.get('/', async (c) => {
   if (to_date) whereParts.push(lte(inventoryMovements.createdAt, new Date(to_date)));
   const whereExpr = whereParts.length > 0 ? and(...whereParts) : undefined;
 
-  const baseSelect = db
+  let baseSelect = db
     .select({
       id: inventoryMovements.id,
       itemId: inventoryMovements.itemId,
@@ -77,15 +87,28 @@ movementsRoutes.get('/', async (c) => {
     .leftJoin(users, eq(users.id, inventoryMovements.actorId))
     .$dynamic();
 
+  // Extra joins richting products zijn alleen nodig voor de owner-scoping.
+  if (!isAdmin(user)) {
+    baseSelect = baseSelect
+      .leftJoin(variants, eq(variants.id, inventoryItems.variantId))
+      .leftJoin(products, eq(products.id, variants.productId));
+  }
+
   const rows = await (whereExpr ? baseSelect.where(whereExpr) : baseSelect)
     .orderBy(desc(inventoryMovements.createdAt))
     .limit(pageSize)
     .offset((page - 1) * pageSize);
 
-  const totalQuery = db
+  let totalQuery = db
     .select({ total: count(inventoryMovements.id) })
     .from(inventoryMovements)
     .$dynamic();
+  if (!isAdmin(user)) {
+    totalQuery = totalQuery
+      .leftJoin(inventoryItems, eq(inventoryItems.id, inventoryMovements.itemId))
+      .leftJoin(variants, eq(variants.id, inventoryItems.variantId))
+      .leftJoin(products, eq(products.id, variants.productId));
+  }
   const totalRow = await (whereExpr ? totalQuery.where(whereExpr) : totalQuery);
   const total = totalRow[0]?.total ?? 0;
 

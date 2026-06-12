@@ -59,6 +59,31 @@ export function useLogin() {
   });
 }
 
+/**
+ * Registratie (tenant-accounts). Succes = 201 + sessie-cookie → auto-login:
+ * we seeden de auth-cache direct met de nieuwe user. 409 → email_taken.
+ */
+export function useRegister() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { email: string; password: string }) => {
+      if (DEMO_MODE) {
+        // Demo zonder backend: doe alsof er een tenant-account is aangemaakt.
+        return {
+          id: 'demo-user-registered',
+          email: input.email,
+          role: 'user',
+        } satisfies AuthUser;
+      }
+      const res = await api.post<{ user: AuthUser }>('/auth/register', input);
+      return res.data.user;
+    },
+    onSuccess: (user) => {
+      qc.setQueryData<AuthUser>(AUTH_QUERY_KEY, user);
+    },
+  });
+}
+
 export function useLogout() {
   const qc = useQueryClient();
   return useMutation({

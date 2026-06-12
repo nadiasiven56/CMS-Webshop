@@ -13,9 +13,10 @@
  * 400 invalid_request
  */
 import type { Context } from 'hono';
-import { and, desc, eq, ilike, or, count } from 'drizzle-orm';
+import { and, desc, eq, ilike, or, count, inArray } from 'drizzle-orm';
 import { db } from '../../lib/db.js';
 import { customers } from '../../db/schema/index.js';
+import { accessibleShopIds } from '../../lib/access.js';
 import { CustomerListQuerySchema } from './_schemas.js';
 import { toCustomerDto } from './_serialize.js';
 
@@ -26,8 +27,20 @@ export async function listCustomers(c: Context): Promise<Response> {
   }
   const { shopId, search, limit, offset } = parsed.data;
 
+  // Multi-user: non-admin ziet alleen member-shops (null = admin/onbeperkt).
+  const memberShopIds = await accessibleShopIds(c.get('user'));
+
   const conditions = [];
-  if (shopId) conditions.push(eq(customers.shopId, shopId));
+  if (shopId) {
+    // Expliciet shop-filter: alleen toegankelijke shop — anders 404 (geen leak).
+    if (memberShopIds && !memberShopIds.includes(shopId)) {
+      return c.json({ error: 'not_found' }, 404);
+    }
+    conditions.push(eq(customers.shopId, shopId));
+  } else if (memberShopIds) {
+    // Lege lijst → inArray rendert `false` → lege resultaten.
+    conditions.push(inArray(customers.shopId, memberShopIds));
+  }
   if (search) {
     const pattern = `%${search}%`;
     conditions.push(

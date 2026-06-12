@@ -187,3 +187,31 @@ roadmap (zie `SYSTEEM-OORDEEL-EN-ROADMAP.md`, gap #1) — nodig om écht "alle a
 - Storefront-SDK: `apps/storefront/sdk/*`.
 - Health: `GET /health` (alleen API-leven) en **`GET /health/ready`** (DB-check).
 - Live-test: `node scripts/smoke-api.mjs`.
+
+## Multi-user: anderen met eigen accounts en eigen webshops
+
+Sinds de multi-user-uitbreiding kunnen derden een eigen account aanmaken en hun
+eigen webshop(s) aan dit CMS hangen, volledig gescheiden van jouw data.
+
+**Hoe het werkt**
+- Registreren: `/register` in de admin-UI (of `POST /api/auth/register`).
+  Nieuwe accounts krijgen rol `user` (tenant); de operator blijft de enige `admin`.
+- Een tenant ziet alleen shops waar hij lid van is (tabel `shop_members`).
+  Wie een shop aanmaakt wordt automatisch **owner**; owners kunnen via het
+  Leden-paneel op de shop-detailpagina anderen toevoegen (op e-mailadres).
+- Producten hebben een eigenaar (`products.owner_user_id`). Tenants zien en
+  beheren alleen hun eigen producten + bijbehorende voorraad en afbeeldingen.
+  Bestaande producten (eigenaar NULL) zijn platform-catalogus: alleen admin.
+- Orders/klanten/retouren/CMS-content/kortingen zijn per shop gescoped;
+  het dashboard van een tenant telt alleen zijn eigen shops.
+- Admin-only modules voor tenants (403): kanalen (Bol/Amazon), finance/
+  boekhouding/grootboek, inkoop, locaties, verzending, marketing-feeds,
+  analytics, notificaties, webhooks, reviews, audit-log en gebruikersbeheer.
+- De admin (jij) ziet alles geconsolideerd: alle shops, producten en omzet.
+
+**Webshop koppelen als tenant**: shop aanmaken → shop-detail → "Koppel je
+webshop" → token genereren → externe frontend stuurt
+`X-Storefront-Token: wcrm_pk_…` mee naar `/api/storefront/v1/*`.
+
+**Verificatie**: `node scripts/smoke-multiuser.mjs` draait de hele keten
+(registratie → shop → token → product → storefront + isolatie-checks).

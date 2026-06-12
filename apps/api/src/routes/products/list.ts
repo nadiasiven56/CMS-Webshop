@@ -9,6 +9,9 @@
  *
  * Order: updated_at desc.
  *
+ * Multi-user: role 'user' ziet alleen eigen producten (owner_user_id);
+ * admin ziet alles (incl. platform-catalogus met owner_user_id = null).
+ *
  * Response:
  *   { items: ProductListItem[], total: number, limit: number, offset: number }
  */
@@ -23,6 +26,7 @@ import {
 } from '../../db/schema/index.js';
 import { ProductStatusSchema } from './_schemas.js';
 import { toProductCore } from './_serialize.js';
+import { isAdmin } from '../../lib/access.js';
 
 const QuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
@@ -32,6 +36,7 @@ const QuerySchema = z.object({
 });
 
 export async function listProducts(c: Context): Promise<Response> {
+  const user = c.get('user');
   const parsed = QuerySchema.safeParse(c.req.query());
   if (!parsed.success) {
     return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
@@ -39,6 +44,8 @@ export async function listProducts(c: Context): Promise<Response> {
   const { limit, offset, status, search } = parsed.data;
 
   const conditions = [];
+  // Multi-user scoping: non-admins zien alleen hun eigen producten.
+  if (!isAdmin(user)) conditions.push(eq(products.ownerUserId, user.id));
   if (status) conditions.push(eq(products.status, status));
   if (search) conditions.push(ilike(products.title, `%${search}%`));
   const whereExpr = conditions.length > 0 ? and(...conditions) : undefined;

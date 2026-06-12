@@ -15,6 +15,10 @@
  *
  * Multipart-parser: Hono's `c.req.parseBody({ all: true })` levert File-objecten
  * (Web-API). We lezen ze in-memory (max 10 MB / file = OK voor V1).
+ *
+ * Multi-user: role 'user' mag alleen images van EIGEN producten uploaden,
+ * wijzigen, verwijderen en reorderen (andermans product = 404); losse uploads
+ * zonder product_id zijn voor role 'user' verboden (403). Admin: alles.
  */
 import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
@@ -33,6 +37,8 @@ import {
   validateImageBuffer,
 } from '../../domain/images/validate.js';
 import { registerProductImage } from '../../domain/images/register-product-image.js';
+import { isAdmin, canAccessProduct } from '../../lib/access.js';
+import type { AuthUser } from '../../lib/auth.js';
 
 export const imageRoutes = new Hono<{ Variables: AuthVariables }>();
 
@@ -68,6 +74,20 @@ function collectFiles(body: Record<string, unknown>): File[] {
   return out;
 }
 
+/**
+ * Multi-user: mag deze user de images van dit product beheren?
+ * Admin altijd (zonder extra query); role 'user' alleen voor eigen producten.
+ */
+async function canAccessImageProduct(user: AuthUser, productId: string): Promise<boolean> {
+  if (isAdmin(user)) return true;
+  const [p] = await db
+    .select({ ownerUserId: products.ownerUserId })
+    .from(products)
+    .where(eq(products.id, productId))
+    .limit(1);
+  return Boolean(p && canAccessProduct(user, { ownerUserId: p.ownerUserId ?? null }));
+}
+
 // ─── POST /api/images — upload (multipart) ───────────────────
 imageRoutes.post('/', requireAuth, async (c) => {
   const user = c.get('user');
@@ -87,6 +107,9 @@ imageRoutes.post('/', requireAuth, async (c) => {
   }
 
   // product_id is optioneel; als gegeven moet hij UUID zijn EN bestaan.
+  // Multi-user: non-admins mogen alleen aan EIGEN producten koppelen
+  // (andermans product = 404, zelfde shape als onbestaand) en mogen geen
+  // losse uploads doen (geen product_id → 403).
   const productIdRaw = (body['product_id'] ?? body['productId']) as string | undefined;
   let productId: string | null = null;
   if (productIdRaw && typeof productIdRaw === 'string' && productIdRaw.length > 0) {
@@ -94,11 +117,20 @@ imageRoutes.post('/', requireAuth, async (c) => {
     if (!parsed.success) {
       return c.json({ error: 'invalid_product_id', message: 'product_id moet UUID zijn.' }, 400);
     }
-    const [p] = await db.select({ id: products.id }).from(products).where(eq(products.id, parsed.data)).limit(1);
-    if (!p) {
+    const [p] = await db
+      .select({ id: products.id, ownerUserId: products.ownerUserId })
+      .from(products)
+      .where(eq(products.id, parsed.data))
+      .limit(1);
+    if (!p || !canAccessProduct(user, { ownerUserId: p.ownerUserId ?? null })) {
       return c.json({ error: 'product_not_found', message: 'Geen product met dit id.' }, 404);
     }
     productId = parsed.data;
+  } else if (!isAdmin(user)) {
+    return c.json(
+      { error: 'forbidden', message: 'Losse uploads (zonder product_id) zijn alleen voor admins.' },
+      403,
+    );
   }
 
   const altRaw = body['alt'];
@@ -219,7 +251,8 @@ imageRoutes.patch('/:id', requireAuth, async (c) => {
   }
 
   const [before] = await db.select().from(productImages).where(eq(productImages.id, idParsed.data)).limit(1);
-  if (!before) {
+  // Multi-user: image van andermans product = 404 (zelfde shape als onbestaand).
+  if (!before || !(await canAccessImageProduct(user, before.productId))) {
     return c.json({ error: 'not_found' }, 404);
   }
 
@@ -264,7 +297,8 @@ imageRoutes.delete('/:id', requireAuth, async (c) => {
   }
 
   const [row] = await db.select().from(productImages).where(eq(productImages.id, idParsed.data)).limit(1);
-  if (!row) {
+  // Multi-user: image van andermans product = 404 (zelfde shape als onbestaand).
+  if (!row || !(await canAccessImageProduct(user, row.productId))) {
     return c.json({ error: 'not_found' }, 404);
   }
 
@@ -325,6 +359,11 @@ imageRoutes.post('/reorder/:productId', requireAuth, async (c) => {
   const productIdParsed = uuidSchema.safeParse(productIdRaw);
   if (!productIdParsed.success) {
     return c.json({ error: 'invalid_product_id' }, 400);
+  }
+
+  // Multi-user: reorder mag alleen op eigen producten (admin: alles).
+  if (!(await canAccessImageProduct(user, productIdParsed.data))) {
+    return c.json({ error: 'product_not_found', message: 'Geen product met dit id.' }, 404);
   }
 
   const json = await c.req.json().catch(() => null);

@@ -23,9 +23,11 @@
  * Wired in routes/index.ts door de orchestrator — zie REGISTER.md.
  */
 import { Hono } from 'hono';
-import { and, desc, eq, ilike, isNull } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, isNull } from 'drizzle-orm';
 import { db } from '../../lib/db.js';
 import { logger } from '../../lib/logger.js';
+import { accessibleShopIds, canAccessShop, isAdmin } from '../../lib/access.js';
+import type { AuthUser } from '../../lib/auth.js';
 import { requireAuth, type AuthVariables } from '../../middleware/auth.js';
 import { isUuid } from '../../domain/shops/shop-context.js';
 import { runInTransactionWithAudit } from '../../domain/stock/transaction-helpers.js';
@@ -67,6 +69,20 @@ function snapshot(d: Discount) {
 }
 
 /**
+ * Multi-user: mag deze user deze discount zien/beheren?
+ * Admin: alles. User: alleen discounts van member-shops; GLOBALE discounts
+ * (shopId NULL) zijn admin-only en blijven voor tenants onzichtbaar (404).
+ */
+async function canSeeDiscount(
+  user: AuthUser,
+  d: { shopId: string | null },
+): Promise<boolean> {
+  if (isAdmin(user)) return true;
+  if (!d.shopId) return false;
+  return canAccessShop(user, d.shopId);
+}
+
+/**
  * Zoek een bestaande code binnen dezelfde scope (shop OF globaal). Postgres telt
  * NULL-shopId als distinct in de UNIQUE-index, dus voor globale codes checken we
  * hier expliciet zodat ook die uniek blijven (vriendelijke 409 i.p.v. dubbele
@@ -98,8 +114,20 @@ discountRoutes.get('/', async (c) => {
   }
   const { shop_id, active, q, limit, offset } = parsed.data;
 
+  // Multi-user: non-admin ziet alleen member-shops; globale discounts
+  // (shopId NULL) vallen daar nooit onder (inArray matcht geen NULL).
+  const memberShopIds = await accessibleShopIds(c.get('user'));
+
   const conditions = [];
-  if (shop_id) conditions.push(eq(discounts.shopId, shop_id));
+  if (shop_id) {
+    if (memberShopIds && !memberShopIds.includes(shop_id)) {
+      return c.json({ error: 'not_found' }, 404);
+    }
+    conditions.push(eq(discounts.shopId, shop_id));
+  } else if (memberShopIds) {
+    // Lege lijst → inArray rendert `false` → lege resultaten.
+    conditions.push(inArray(discounts.shopId, memberShopIds));
+  }
   if (active !== undefined) conditions.push(eq(discounts.active, active));
   if (q) conditions.push(ilike(discounts.code, `%${q.toUpperCase()}%`));
   const whereExpr = conditions.length > 0 ? and(...conditions) : undefined;
@@ -137,6 +165,20 @@ discountRoutes.post('/', async (c) => {
   const input = parsed.data;
   const code = input.code.toUpperCase();
   const shopId = input.shopId ?? null;
+
+  // Multi-user: tenants mogen GEEN globale discounts aanmaken (shopId
+  // verplicht) en alleen op een toegankelijke shop (404 = geen leak).
+  if (!isAdmin(user)) {
+    if (!shopId) {
+      return c.json(
+        { error: 'invalid_request', message: 'shopId is required' },
+        400,
+      );
+    }
+    if (!(await canAccessShop(user, shopId))) {
+      return c.json({ error: 'not_found' }, 404);
+    }
+  }
 
   // Duplicate-check (per shop OF globaal). 409 i.p.v. raw DB-constraint-error.
   if (await findCodeClash(code, shopId)) {
@@ -192,6 +234,15 @@ discountRoutes.post('/validate', async (c) => {
   }
   const input = parsed.data;
 
+  // Multi-user: tenants previewen alleen binnen een eigen (member-)shop.
+  // Zonder of met een niet-toegankelijke shop_id → 404 (geen code-probing).
+  const user = c.get('user');
+  if (!isAdmin(user)) {
+    if (!input.shop_id || !(await canAccessShop(user, input.shop_id))) {
+      return c.json({ error: 'not_found' }, 404);
+    }
+  }
+
   const result = await validateDiscountCode(input.code, {
     shopId: input.shop_id ?? null,
     subtotalCents: toCents(input.subtotal),
@@ -224,6 +275,10 @@ discountRoutes.get('/:id', async (c) => {
 
   const [discount] = await db.select().from(discounts).where(eq(discounts.id, id)).limit(1);
   if (!discount) return c.json({ error: 'not_found' }, 404);
+  // Multi-user: niet zichtbaar (andere shop of globaal) → zelfde 404.
+  if (!(await canSeeDiscount(c.get('user'), discount))) {
+    return c.json({ error: 'not_found' }, 404);
+  }
 
   return c.json({ discount: toDiscountDto(discount) });
 });
@@ -244,6 +299,22 @@ discountRoutes.patch('/:id', async (c) => {
 
   const [existing] = await db.select().from(discounts).where(eq(discounts.id, id)).limit(1);
   if (!existing) return c.json({ error: 'not_found' }, 404);
+  // Multi-user: niet zichtbaar (andere shop of globaal) → zelfde 404. Tenants
+  // mogen een discount ook niet globaal maken of naar een vreemde shop verhuizen.
+  if (!(await canSeeDiscount(user, existing))) {
+    return c.json({ error: 'not_found' }, 404);
+  }
+  if (!isAdmin(user) && patch.shopId !== undefined) {
+    if (patch.shopId === null) {
+      return c.json(
+        { error: 'invalid_request', message: 'shopId is required' },
+        400,
+      );
+    }
+    if (!(await canAccessShop(user, patch.shopId))) {
+      return c.json({ error: 'not_found' }, 404);
+    }
+  }
 
   // Bepaal nieuwe code/shop voor duplicate-check (alleen als één van beide wisselt).
   const nextCode = patch.code !== undefined ? patch.code.toUpperCase() : existing.code;
@@ -304,6 +375,10 @@ discountRoutes.delete('/:id', async (c) => {
   const user = c.get('user');
   const [existing] = await db.select().from(discounts).where(eq(discounts.id, id)).limit(1);
   if (!existing) return c.json({ error: 'not_found' }, 404);
+  // Multi-user: niet zichtbaar (andere shop of globaal) → zelfde 404.
+  if (!(await canSeeDiscount(user, existing))) {
+    return c.json({ error: 'not_found' }, 404);
+  }
 
   await runInTransactionWithAudit(async (tx, audit) => {
     // discount_redemptions cascaden via FK onDelete:'cascade'.
@@ -336,11 +411,15 @@ discountRoutes.get('/:id/redemptions', async (c) => {
   const { limit, offset } = parsed.data;
 
   const [discount] = await db
-    .select({ id: discounts.id })
+    .select({ id: discounts.id, shopId: discounts.shopId })
     .from(discounts)
     .where(eq(discounts.id, id))
     .limit(1);
   if (!discount) return c.json({ error: 'not_found' }, 404);
+  // Multi-user: niet zichtbaar (andere shop of globaal) → zelfde 404.
+  if (!(await canSeeDiscount(c.get('user'), discount))) {
+    return c.json({ error: 'not_found' }, 404);
+  }
 
   const rows = await db
     .select()

@@ -36,6 +36,36 @@ Geen verdere wiring nodig. Auth (`requireAuth`) zit al binnen de router
 **Geld**: `priceOverride` is een numeric(12,4)-**string** (Money-conventie), nooit
 number — in & out.
 
+## Multi-user (toegevoegd door Atlas, feat/multi-user)
+
+Alle bovenstaande endpoints zijn nu gescoped via `lib/access.ts`:
+
+- **GET /api/shops** — non-admin ziet alleen member-shops (`accessibleShopIds`;
+  lege membership → lege lijst). Admin ziet alles.
+- **POST /api/shops** — blijft open voor elke ingelogde user; een user met role
+  `user` wordt na aanmaken automatisch owner-member (`addShopMember`).
+- **GET/PATCH/DELETE /:id**, **GET /:id/products**, **PUT /:id/products/:productId**
+  en alle storefront-token-endpoints — `canAccessShop`-check; non-member → 404
+  in de bestaande not-found-shape (`not_found` resp. `shop_not_found`), geen
+  403 (voorkomt existence-leak).
+- **PUT /:id/products/:productId** — non-admin mag bovendien alleen EIGEN
+  producten publiceren (`canAccessProduct`); platform-/andermans product →
+  `404 product_not_found`.
+
+### Members-endpoints (`members.ts`, geregistreerd op dezelfde router → geen extra mount)
+
+| Method | Path | Doel |
+|---|---|---|
+| GET    | `/api/shops/:id/members` | ledenlijst `{shopId, items:[{id,userId,email,role,createdAt}], total}`. Toegang: admin of member. |
+| POST   | `/api/shops/:id/members` | body `{email, role?: 'owner'\|'staff' (default 'staff')}`. E-mail-lookup case-insensitive; onbekend → `404 user_not_found`. Idempotent: bestaand lidmaatschap → `200` (role ongewijzigd), nieuw → `201`. Toegang: admin of owner (staff → `403 owner_only`). |
+| DELETE | `/api/shops/:id/members/:memberId` | verwijderen. Laatste owner → `409 last_owner`. Toegang: admin of owner. |
+
+Writes auditen als `entityType: 'shop_member'` via `runInTransactionWithAudit`.
+
+Extra test: `__tests__/multi-user.real-db.test.ts` (echte DB, echte sessies) —
+dekt list-scoping, non-member-404's, members add/remove, last-owner-guard,
+product-ownership en cms-scoping (8 tests groen).
+
 **Audit**: alle writes (create/update/delete shop, upsert shop_product) lopen via
 `runInTransactionWithAudit` → `audit_log`-rij met `entityType` `shop` resp.
 `shop_product`.

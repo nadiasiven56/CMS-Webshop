@@ -27,6 +27,7 @@ import {
   NegativeStockError,
 } from '../../domain/stock/available-recompute.js';
 import { runInTransactionWithAudit } from '../../domain/stock/transaction-helpers.js';
+import { isAdmin, canAccessProduct } from '../../lib/access.js';
 
 export const stockRoutes = new Hono<{ Variables: AuthVariables }>();
 
@@ -89,6 +90,7 @@ stockRoutes.get('/', async (c) => {
     return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
   }
   const { page, pageSize, search, sort, lowStockOnly } = parsed.data;
+  const user = c.get('user');
 
   // Aggregated totals per item via 1 round-trip:
   //   - sum(on_hand), sum(available), sum(committed), sum(incoming)
@@ -105,6 +107,12 @@ stockRoutes.get('/', async (c) => {
 
   // Where-clause
   const whereParts = [];
+  // Multi-user: non-admins zien alleen voorraad van eigen producten.
+  // (items -> variants -> products is al gejoind; owner-filter sluit
+  // impliciet ook items zonder variant/product uit.)
+  if (!isAdmin(user)) {
+    whereParts.push(eq(products.ownerUserId, user.id));
+  }
   if (search) {
     const term = `%${search}%`;
     whereParts.push(
@@ -215,6 +223,7 @@ stockRoutes.get('/:itemId', async (c) => {
   if (!isUuid(itemId)) {
     return c.json({ error: 'invalid_item_id' }, 400);
   }
+  const user = c.get('user');
 
   // Header: item + variant + product
   const [header] = await db
@@ -231,6 +240,7 @@ stockRoutes.get('/:itemId', async (c) => {
       productId: products.id,
       productTitle: products.title,
       productStatus: products.status,
+      productOwnerUserId: products.ownerUserId,
     })
     .from(inventoryItems)
     .leftJoin(variants, eq(variants.id, inventoryItems.variantId))
@@ -238,7 +248,12 @@ stockRoutes.get('/:itemId', async (c) => {
     .where(eq(inventoryItems.id, itemId))
     .limit(1);
 
-  if (!header) {
+  // Multi-user: voorraad van andermans product (of zonder product-koppeling)
+  // gedraagt zich voor non-admins als onbestaand — zelfde 404-shape.
+  if (
+    !header ||
+    !canAccessProduct(user, { ownerUserId: header.productOwnerUserId ?? null })
+  ) {
     return c.json({ error: 'item_not_found' }, 404);
   }
 
@@ -382,6 +397,20 @@ stockRoutes.post('/:itemId/adjust', async (c) => {
     .limit(1);
   if (!itemRow) {
     return c.json({ error: 'item_not_found' }, 404);
+  }
+  // Multi-user: non-admins mogen alleen voorraad van eigen producten muteren.
+  // Andermans (of ongekoppelde) items gedragen zich als onbestaand (404).
+  if (!isAdmin(user)) {
+    const [owned] = await db
+      .select({ ownerUserId: products.ownerUserId })
+      .from(inventoryItems)
+      .leftJoin(variants, eq(variants.id, inventoryItems.variantId))
+      .leftJoin(products, eq(products.id, variants.productId))
+      .where(eq(inventoryItems.id, itemId))
+      .limit(1);
+    if (!owned || !canAccessProduct(user, { ownerUserId: owned.ownerUserId ?? null })) {
+      return c.json({ error: 'item_not_found' }, 404);
+    }
   }
   const [locationRow] = await db
     .select({ id: locations.id, active: locations.active })

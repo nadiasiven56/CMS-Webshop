@@ -32,6 +32,7 @@ import {
   toProductImageDto,
 } from './_serialize.js';
 import { isUuid } from './_validate.js';
+import { canAccessProduct } from '../../lib/access.js';
 
 export async function updateProduct(c: Context): Promise<Response> {
   const id = c.req.param('id');
@@ -49,7 +50,8 @@ export async function updateProduct(c: Context): Promise<Response> {
 
   const updated = await db.transaction(async (tx) => {
     const [existing] = await tx.select().from(products).where(eq(products.id, id)).limit(1);
-    if (!existing) return null;
+    // Multi-user: andermans product = 404 (zelfde shape als onbestaand).
+    if (!existing || !canAccessProduct(user, existing)) return null;
 
     const patch: Partial<typeof products.$inferInsert> = {};
     if (input.title !== undefined) patch.title = input.title;

@@ -132,7 +132,7 @@ blogRoutes.post('/', async (c) => {
   const input = parsed.data;
 
   const shopRef = input.shopId ?? c.req.query('shop') ?? c.req.header('x-shop-id');
-  const shopId = await resolveShopId(shopRef);
+  const shopId = await resolveShopId(shopRef, user);
   if (!shopId) return shopError(c, !!shopRef);
 
   const slug = slugify(input.slug ?? input.title);

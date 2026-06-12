@@ -33,8 +33,10 @@ import { inventoryItems } from '../../db/schema/inventory-items.js';
 import { inventoryLevels } from '../../db/schema/inventory-levels.js';
 import { variants } from '../../db/schema/variants.js';
 import { products } from '../../db/schema/products.js';
+import { shopProducts } from '../../db/schema/shop-products.js';
 import { channels } from '../../db/schema/channels.js';
 import { auditLog } from '../../db/schema/audit-log.js';
+import { accessibleShopIds } from '../../lib/access.js';
 import { toCents } from '../../domain/finance/vat-math.js';
 import { KpiQuerySchema } from './_schemas.js';
 import { auditRowToActivity, buildKpis, type KpiAggregates } from './_serialize.js';
@@ -57,6 +59,14 @@ dashboardRoutes.get('/kpis', async (c) => {
     return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
   }
   const { shop_id, channel, from, to } = parsed.data;
+
+  // Multi-user: non-admin aggregeert alleen over member-shops (null = admin).
+  // Expliciete shop_id buiten de member-shops → 404 (geen existence-leak).
+  const user = c.get('user');
+  const memberShopIds = await accessibleShopIds(user);
+  if (shop_id && memberShopIds && !memberShopIds.includes(shop_id)) {
+    return c.json({ error: 'not_found' }, 404);
+  }
 
   const now = new Date();
 
@@ -84,6 +94,8 @@ dashboardRoutes.get('/kpis', async (c) => {
   // ── Gedeelde order-filter ──────────────────────────────────
   const orderConds = [inArray(orders.financialStatus, [...REVENUE_STATUSES])];
   if (shop_id) orderConds.push(eq(orders.shopId, shop_id));
+  // Lege member-lijst → inArray rendert `false` → 0-KPI's.
+  else if (memberShopIds) orderConds.push(inArray(orders.shopId, memberShopIds));
   if (channel) orderConds.push(eq(orders.channel, channel));
 
   const windowConds = [
@@ -127,6 +139,7 @@ dashboardRoutes.get('/kpis', async (c) => {
     sql`${orders.status} not in ('delivered','cancelled','refunded')`,
   ];
   if (shop_id) openConds.push(eq(orders.shopId, shop_id));
+  else if (memberShopIds) openConds.push(inArray(orders.shopId, memberShopIds));
   if (channel) openConds.push(eq(orders.channel, channel));
 
   const [openCounts] = await db
@@ -140,6 +153,22 @@ dashboardRoutes.get('/kpis', async (c) => {
 
   // ── Low stock ──────────────────────────────────────────────
   // available < min_stock op level-niveau. Top-3 op laagste available.
+  // Multi-user: non-admin ziet alleen voorraad van producten die aan een
+  // member-shop gekoppeld zijn (shop_products); admin blijft globaal.
+  const lowStockConds = [
+    sql`${inventoryLevels.minStock} is not null and ${inventoryLevels.available} < ${inventoryLevels.minStock}`,
+  ];
+  if (memberShopIds) {
+    lowStockConds.push(
+      inArray(
+        products.id,
+        db
+          .select({ id: shopProducts.productId })
+          .from(shopProducts)
+          .where(inArray(shopProducts.shopId, memberShopIds)),
+      ),
+    );
+  }
   const lowStockRows = await db
     .select({
       sku: inventoryItems.sku,
@@ -150,9 +179,7 @@ dashboardRoutes.get('/kpis', async (c) => {
     .innerJoin(inventoryItems, eq(inventoryItems.id, inventoryLevels.itemId))
     .leftJoin(variants, eq(variants.id, inventoryItems.variantId))
     .leftJoin(products, eq(products.id, variants.productId))
-    .where(
-      sql`${inventoryLevels.minStock} is not null and ${inventoryLevels.available} < ${inventoryLevels.minStock}`,
-    );
+    .where(and(...lowStockConds));
 
   const lowStockCount = lowStockRows.length;
   const lowStockTop = [...lowStockRows]
@@ -183,16 +210,22 @@ dashboardRoutes.get('/kpis', async (c) => {
   }));
 
   // ── Channels (echte tabel) ─────────────────────────────────
-  const channelRows = await db
-    .select({
-      name: channels.name,
-      status: channels.status,
-      lastSyncAt: channels.lastSyncAt,
-    })
-    .from(channels)
-    .orderBy(channels.name);
+  // Multi-user: channels zijn globale (admin-)infra in V1 → tenants zien een
+  // lege lijst i.p.v. andermans koppelingen.
+  const channelRows = memberShopIds
+    ? []
+    : await db
+        .select({
+          name: channels.name,
+          status: channels.status,
+          lastSyncAt: channels.lastSyncAt,
+        })
+        .from(channels)
+        .orderBy(channels.name);
 
   // ── Recent activity (audit_log) ────────────────────────────
+  // Multi-user: audit_log is niet shop-gescoped → tenants zien alleen hun
+  // eigen acties; admin ziet alles (geconsolideerd, ongewijzigd).
   const auditRows = await db
     .select({
       id: auditLog.id,
@@ -203,6 +236,7 @@ dashboardRoutes.get('/kpis', async (c) => {
       ts: auditLog.ts,
     })
     .from(auditLog)
+    .where(memberShopIds ? eq(auditLog.actorId, user.id) : undefined)
     .orderBy(desc(auditLog.ts))
     .limit(10);
 

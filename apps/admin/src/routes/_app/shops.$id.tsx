@@ -17,6 +17,7 @@ import { ShopStatusBadge } from '@/components/shops/ShopStatusBadge';
 import { ShopDrawer, valuesToPayload } from '@/components/shops/ShopDrawer';
 import { ProductPublicationMatrix } from '@/components/shops/ProductPublicationMatrix';
 import { ConnectPanel } from '@/components/shops/ConnectPanel';
+import { MembersPanel } from '@/components/shops/MembersPanel';
 import { PaymentsPanel } from '@/components/shops/PaymentsPanel';
 import {
   useShopDetail,
@@ -184,6 +185,8 @@ function ShopDetailPage() {
       </div>
 
       <ConnectPanel shop={shop} />
+
+      <MembersPanel shopId={id} />
 
       <PaymentsPanel shop={shop} />
 

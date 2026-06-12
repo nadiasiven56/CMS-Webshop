@@ -10,7 +10,7 @@
  * Alles via `runInTransactionWithAudit` (entityType 'return').
  */
 import type { Context } from 'hono';
-import { and, eq, asc, desc } from 'drizzle-orm';
+import { and, eq, asc, desc, inArray } from 'drizzle-orm';
 import { db } from '../../lib/db.js';
 import { orders } from '../../db/schema/orders.js';
 import type { Order } from '../../db/schema/orders.js';
@@ -28,6 +28,7 @@ import {
 } from '../../domain/stock/transaction-helpers.js';
 import { applyDeltaAndRecompute, type DbOrTx } from '../../domain/stock/available-recompute.js';
 import { postRefund } from '../../domain/finance/ledger-posting.js';
+import { accessibleShopIds, canAccessShop } from '../../lib/access.js';
 import { money } from '@webshop-crm/shared/types/money';
 import { isUuid } from '../products/_validate.js';
 import {
@@ -242,6 +243,10 @@ export async function createReturnForOrder(c: Context): Promise<Response> {
     .where(eq(orders.id, orderId))
     .limit(1);
   if (!order) return c.json({ error: 'order_not_found' }, 404);
+  // Multi-user: shop niet toegankelijk → zelfde 404 (geen existence-leak).
+  if (!(await canAccessShop(user, order.shopId))) {
+    return c.json({ error: 'order_not_found' }, 404);
+  }
 
   // Over-refund-guard: weiger als de totale terugbetaling het order-totaal
   // overschrijdt (anders crediteert het grootboek meer dan ooit verkocht).
@@ -346,6 +351,16 @@ export async function listReturnsForOrder(c: Context): Promise<Response> {
   const orderId = c.req.param('id');
   if (!isUuid(orderId)) return c.json({ error: 'invalid_id' }, 400);
 
+  // Multi-user: order van een niet-toegankelijke shop → 404 (geen existence-leak).
+  const [order] = await db
+    .select({ id: orders.id, shopId: orders.shopId })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+  if (order && !(await canAccessShop(c.get('user'), order.shopId))) {
+    return c.json({ error: 'not_found' }, 404);
+  }
+
   const rows = await db
     .select()
     .from(returns)
@@ -369,8 +384,19 @@ export async function listReturns(c: Context): Promise<Response> {
   }
   const { shop_id, order_id, status, limit, offset } = parsed.data;
 
+  // Multi-user: non-admin ziet alleen member-shops (null = admin/onbeperkt).
+  const memberShopIds = await accessibleShopIds(c.get('user'));
+
   const conditions = [];
-  if (shop_id) conditions.push(eq(returns.shopId, shop_id));
+  if (shop_id) {
+    if (memberShopIds && !memberShopIds.includes(shop_id)) {
+      return c.json({ error: 'not_found' }, 404);
+    }
+    conditions.push(eq(returns.shopId, shop_id));
+  } else if (memberShopIds) {
+    // Lege lijst → inArray rendert `false` → lege resultaten.
+    conditions.push(inArray(returns.shopId, memberShopIds));
+  }
   if (order_id) conditions.push(eq(returns.orderId, order_id));
   if (status) conditions.push(eq(returns.status, status));
   const whereExpr = conditions.length > 0 ? and(...conditions) : undefined;
@@ -391,6 +417,10 @@ export async function getReturn(c: Context): Promise<Response> {
 
   const [r] = await db.select().from(returns).where(eq(returns.id, rid)).limit(1);
   if (!r) return c.json({ error: 'not_found' }, 404);
+  // Multi-user: shop niet toegankelijk → zelfde 404 (geen existence-leak).
+  if (!(await canAccessShop(c.get('user'), r.shopId))) {
+    return c.json({ error: 'not_found' }, 404);
+  }
   const ris = await db.select().from(returnItems).where(eq(returnItems.returnId, rid));
   return c.json({ return: toReturnDto(r, ris) });
 }
@@ -416,10 +446,18 @@ export async function createReturn(c: Context): Promise<Response> {
       .where(eq(orders.id, orderId))
       .limit(1);
     if (!order) return c.json({ error: 'order_not_found' }, 404);
+    // Multi-user: order van een niet-toegankelijke shop → zelfde 404.
+    if (!(await canAccessShop(user, order.shopId))) {
+      return c.json({ error: 'order_not_found' }, 404);
+    }
     shopId = shopId ?? order.shopId;
   }
   if (!shopId) {
     return c.json({ error: 'invalid_request', message: 'shopId or orderId required' }, 400);
+  }
+  // Multi-user: create alleen op een toegankelijke shop (404 = geen leak).
+  if (!(await canAccessShop(user, shopId))) {
+    return c.json({ error: 'not_found' }, 404);
   }
 
   const result = await runInTransactionWithAudit(async (tx, audit) => {
@@ -485,6 +523,10 @@ export async function updateReturn(c: Context): Promise<Response> {
 
   const [existing] = await db.select().from(returns).where(eq(returns.id, rid)).limit(1);
   if (!existing) return c.json({ error: 'not_found' }, 404);
+  // Multi-user: shop niet toegankelijk → zelfde 404 (geen existence-leak).
+  if (!(await canAccessShop(user, existing.shopId))) {
+    return c.json({ error: 'not_found' }, 404);
+  }
 
   const patch: Record<string, unknown> = { updatedAt: new Date() };
   if (input.status !== undefined) patch.status = input.status;

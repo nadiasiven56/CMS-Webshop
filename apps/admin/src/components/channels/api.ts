@@ -23,6 +23,7 @@ import {
   keepPreviousData,
 } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 
 // ─── DTO-types (mirror van backend _serialize.ts) ──────────────
 
@@ -114,6 +115,8 @@ export const CHANNELS_QUERY_KEYS = {
 // ─── List ──────────────────────────────────────────────────────
 
 export function useChannels(filters: ChannelListFilters = {}) {
+  // Kanalen zijn admin-only; voor tenants de query niet vuren (scheelt 403-ruis).
+  const { data: authUser } = useAuth();
   return useQuery({
     queryKey: CHANNELS_QUERY_KEYS.list(filters),
     queryFn: async (): Promise<ChannelListResponse> => {
@@ -127,6 +130,7 @@ export function useChannels(filters: ChannelListFilters = {}) {
       });
       return res.data;
     },
+    enabled: authUser?.role === 'admin',
     placeholderData: keepPreviousData,
   });
 }

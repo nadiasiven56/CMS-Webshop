@@ -26,6 +26,7 @@ import { orderPayments } from '../../db/schema/order-payments.js';
 import { runInTransactionWithAudit } from '../../domain/stock/transaction-helpers.js';
 import { postOrderRevenue } from '../../domain/finance/ledger-posting.js';
 import { money, add, ZERO, gt, lt } from '@webshop-crm/shared/types/money';
+import { canAccessShop } from '../../lib/access.js';
 import { isUuid } from '../products/_validate.js';
 import { PaymentCreateSchema } from './_schemas.js';
 import { toOrderCore, toOrderPaymentDto } from './_serialize.js';
@@ -35,8 +36,16 @@ export async function listPayments(c: Context): Promise<Response> {
   const id = c.req.param('id');
   if (!isUuid(id)) return c.json({ error: 'invalid_id' }, 400);
 
-  const [order] = await db.select({ id: orders.id }).from(orders).where(eq(orders.id, id)).limit(1);
+  const [order] = await db
+    .select({ id: orders.id, shopId: orders.shopId })
+    .from(orders)
+    .where(eq(orders.id, id))
+    .limit(1);
   if (!order) return c.json({ error: 'not_found' }, 404);
+  // Multi-user: shop niet toegankelijk → zelfde 404 (geen existence-leak).
+  if (!(await canAccessShop(c.get('user'), order.shopId))) {
+    return c.json({ error: 'not_found' }, 404);
+  }
 
   const rows = await db
     .select()
@@ -61,6 +70,10 @@ export async function createPayment(c: Context): Promise<Response> {
 
   const [order] = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
   if (!order) return c.json({ error: 'not_found' }, 404);
+  // Multi-user: shop niet toegankelijk → zelfde 404 (geen existence-leak).
+  if (!(await canAccessShop(user, order.shopId))) {
+    return c.json({ error: 'not_found' }, 404);
+  }
 
   const result = await runInTransactionWithAudit(async (tx, audit) => {
     const [payment] = await tx

@@ -14,18 +14,25 @@ import type { Context } from 'hono';
 import { and, asc, eq, ne } from 'drizzle-orm';
 import { db } from '../../lib/db.js';
 import { customers, customerAddresses } from '../../db/schema/index.js';
+import { canAccessShop } from '../../lib/access.js';
+import type { AuthUser } from '../../lib/auth.js';
 import { AddressCreateSchema, AddressUpdateSchema } from './_schemas.js';
 import { toCustomerAddressDto } from './_serialize.js';
 import { isUuid } from './_validate.js';
 
-/** Bestaat de klant? (alle adres-routes zijn genest onder een klant) */
-async function customerExists(id: string): Promise<boolean> {
+/**
+ * Bestaat de klant én mag deze user erbij? (alle adres-routes zijn genest
+ * onder een klant). Multi-user: klant van een niet-toegankelijke shop telt
+ * als onbestaand (zelfde 404, geen existence-leak).
+ */
+async function customerAccessible(user: AuthUser, id: string): Promise<boolean> {
   const [row] = await db
-    .select({ id: customers.id })
+    .select({ shopId: customers.shopId })
     .from(customers)
     .where(eq(customers.id, id))
     .limit(1);
-  return Boolean(row);
+  if (!row) return false;
+  return canAccessShop(user, row.shopId);
 }
 
 export async function listAddresses(c: Context): Promise<Response> {
@@ -33,7 +40,7 @@ export async function listAddresses(c: Context): Promise<Response> {
   if (!isUuid(customerId)) {
     return c.json({ error: 'invalid_id' }, 400);
   }
-  if (!(await customerExists(customerId))) {
+  if (!(await customerAccessible(c.get('user'), customerId))) {
     return c.json({ error: 'not_found' }, 404);
   }
 
@@ -57,6 +64,10 @@ export async function createAddress(c: Context): Promise<Response> {
     return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
   }
   const input = parsed.data;
+
+  if (!(await customerAccessible(c.get('user'), customerId))) {
+    return c.json({ error: 'not_found' }, 404);
+  }
 
   const address = await db.transaction(async (tx) => {
     const [customer] = await tx
@@ -120,6 +131,10 @@ export async function updateAddress(c: Context): Promise<Response> {
   }
   const input = parsed.data;
 
+  if (!(await customerAccessible(c.get('user'), customerId))) {
+    return c.json({ error: 'not_found' }, 404);
+  }
+
   const updated = await db.transaction(async (tx) => {
     const [existing] = await tx
       .select()
@@ -181,6 +196,10 @@ export async function deleteAddress(c: Context): Promise<Response> {
   const addressId = c.req.param('addressId');
   if (!isUuid(customerId) || !isUuid(addressId)) {
     return c.json({ error: 'invalid_id' }, 400);
+  }
+
+  if (!(await customerAccessible(c.get('user'), customerId))) {
+    return c.json({ error: 'not_found' }, 404);
   }
 
   const deleted = await db

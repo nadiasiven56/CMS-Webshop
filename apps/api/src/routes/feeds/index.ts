@@ -37,7 +37,7 @@ import { Hono } from 'hono';
 import { and, asc, eq } from 'drizzle-orm';
 import { db } from '../../lib/db.js';
 import { logger } from '../../lib/logger.js';
-import { requireAuth, type AuthVariables } from '../../middleware/auth.js';
+import { requireAdmin, type AuthVariables } from '../../middleware/auth.js';
 import { isUuid } from '../../domain/shops/shop-context.js';
 import { runInTransactionWithAudit } from '../../domain/stock/transaction-helpers.js';
 import { shops } from '../../db/schema/shops.js';
@@ -65,11 +65,12 @@ const ip = (c: { req: { header: (k: string) => string | undefined } }) =>
   c.req.header('x-forwarded-for') ?? c.req.header('x-real-ip') ?? null;
 
 // ════════════════════════════════════════════════════════════════
-// AUTHED sub-router — admin-CRUD (achter requireAuth)
+// AUTHED sub-router — admin-CRUD (multi-user: admin-only; tenants beheren
+// in V1 geen marketing-feeds)
 // ════════════════════════════════════════════════════════════════
 
 const authedRoutes = new Hono<{ Variables: AuthVariables }>();
-authedRoutes.use('*', requireAuth);
+authedRoutes.use('*', requireAdmin);
 
 /** Helper: bestaat de shop? */
 async function shopExists(shopId: string): Promise<boolean> {

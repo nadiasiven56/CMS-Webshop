@@ -21,15 +21,19 @@ import {
   toProductImageDto,
 } from './_serialize.js';
 import { isUuid } from './_validate.js';
+import { canAccessProduct } from '../../lib/access.js';
 
 export async function getProduct(c: Context): Promise<Response> {
   const id = c.req.param('id');
   if (!isUuid(id)) {
     return c.json({ error: 'invalid_id' }, 400);
   }
+  const user = c.get('user');
 
   const [product] = await db.select().from(products).where(eq(products.id, id)).limit(1);
-  if (!product) {
+  // Multi-user: andermans product gedraagt zich als onbestaand (404, geen 403)
+  // zodat product-ids niet enumerable zijn.
+  if (!product || !canAccessProduct(user, product)) {
     return c.json({ error: 'not_found' }, 404);
   }
 

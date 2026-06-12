@@ -14,6 +14,7 @@ const dbState = {
     createdAt: Date;
   }>,
   audit: [] as unknown[],
+  products: [] as Array<{ id: string; ownerUserId: string | null }>,
 };
 
 vi.mock('../../../db/schema/products.js', () => ({ products: { __name: 'products' } }));
@@ -39,10 +40,12 @@ vi.mock('../../../lib/db.js', () => {
         return chain;
       },
       then(r: (v: unknown) => unknown) {
-        const rows =
-          table === 'productImages'
-            ? dbState.productImages.filter((row) => row.id === whereId)
-            : [];
+        let rows: unknown[] = [];
+        if (table === 'productImages') {
+          rows = dbState.productImages.filter((row) => row.id === whereId);
+        } else if (table === 'products') {
+          rows = dbState.products.filter((row) => row.id === whereId);
+        }
         return Promise.resolve(rows).then(r);
       },
     };
@@ -82,6 +85,7 @@ vi.mock('../../../lib/db.js', () => {
 
 vi.mock('drizzle-orm', () => ({
   eq: (_c: unknown, v: unknown) => ({ __id: v }),
+  and: (...parts: unknown[]) => ({ __and: parts }),
   inArray: (_c: unknown, v: unknown[]) => ({ __ids: v }),
   sql: (..._a: unknown[]) => ({ __sql: true }),
 }));
@@ -109,12 +113,16 @@ vi.mock('../../../lib/storage/index.js', async () => {
   };
 });
 
+// Mutable user zodat multi-user-tests van rol kunnen wisselen.
+const authState = {
+  user: { id: 'user-test-1', email: 'admin@test', role: 'admin' },
+};
 vi.mock('../../../middleware/auth.js', () => ({
   requireAuth: async (
     c: { set: (k: string, v: unknown) => void },
     next: () => Promise<void>,
   ) => {
-    c.set('user', { id: 'user-test-1', email: 'admin@test', role: 'admin' });
+    c.set('user', authState.user);
     await next();
   },
 }));
@@ -133,6 +141,8 @@ function buildApp() {
 }
 
 beforeEach(() => {
+  authState.user = { id: 'user-test-1', email: 'admin@test', role: 'admin' };
+  dbState.products = [{ id: '11111111-1111-4111-8111-111111111111', ownerUserId: null }];
   dbState.productImages = [
     {
       id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -174,6 +184,33 @@ describe('DELETE /api/images/:id', () => {
     const app = buildApp();
     const res = await app.request('/api/images/not-a-uuid', { method: 'DELETE' });
     expect(res.status).toBe(400);
+  });
+
+  it("404 voor role 'user' als de image bij andermans product hoort", async () => {
+    authState.user = { id: 'aaaaaaaa-0000-4000-8000-00000000000a', email: 'a@test', role: 'user' };
+    dbState.products = [
+      { id: '11111111-1111-4111-8111-111111111111', ownerUserId: 'bbbbbbbb-0000-4000-8000-00000000000b' },
+    ];
+    const app = buildApp();
+    const res = await app.request('/api/images/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', {
+      method: 'DELETE',
+    });
+    expect(res.status).toBe(404);
+    expect(dbState.productImages).toHaveLength(1); // niets verwijderd
+    expect(storageDeletes).toHaveLength(0);
+  });
+
+  it("200 voor role 'user' op image van eigen product", async () => {
+    authState.user = { id: 'aaaaaaaa-0000-4000-8000-00000000000a', email: 'a@test', role: 'user' };
+    dbState.products = [
+      { id: '11111111-1111-4111-8111-111111111111', ownerUserId: 'aaaaaaaa-0000-4000-8000-00000000000a' },
+    ];
+    const app = buildApp();
+    const res = await app.request('/api/images/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', {
+      method: 'DELETE',
+    });
+    expect(res.status).toBe(200);
+    expect(dbState.productImages).toHaveLength(0);
   });
 
   it('still 200 if storage.delete throws (DB row already gone)', async () => {

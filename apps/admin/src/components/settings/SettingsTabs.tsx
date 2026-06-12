@@ -11,23 +11,29 @@
  * de highlight ook zonder button-element zichtbaar is.
  */
 import { Link, useRouterState } from '@tanstack/react-router';
+import { useAuth } from '@/lib/auth';
 
 interface TabDef {
   to: string;
   label: string;
+  /** Alleen voor role 'admin' (gebruikers-/token-/webhook-beheer is platform-breed). */
+  adminOnly?: boolean;
 }
 
 const TABS: TabDef[] = [
   { to: '/settings', label: 'Account' },
-  { to: '/settings/users', label: 'Gebruikers' },
-  { to: '/settings/tokens', label: 'Tokens' },
-  { to: '/settings/webhooks', label: 'Webhooks' },
+  { to: '/settings/users', label: 'Gebruikers', adminOnly: true },
+  { to: '/settings/tokens', label: 'Tokens', adminOnly: true },
+  { to: '/settings/webhooks', label: 'Webhooks', adminOnly: true },
 ];
 
 export function SettingsTabs() {
   const pathname = useRouterState({
     select: (s) => s.location.pathname,
   });
+  const auth = useAuth();
+  const isAdmin = auth.data?.role === 'admin';
+  const tabs = TABS.filter((t) => !t.adminOnly || isAdmin);
 
   // De "Account"-tab (/settings) is alleen actief op exact /settings; de overige
   // tabs zijn actief zodra de pathname met hun pad begint.
@@ -40,7 +46,7 @@ export function SettingsTabs() {
 
   return (
     <div className="segmented" style={{ marginBottom: 20 }}>
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const active = isActive(tab.to);
         return (
           <Link

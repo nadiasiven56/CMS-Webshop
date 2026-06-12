@@ -23,6 +23,8 @@ export interface ProductCoreDto {
   productType: string | null;
   status: string;
   tags: string[];
+  /** Eigenaar (multi-user). `null` = platform-catalogus van de operator. */
+  ownerUserId: string | null;
   publishedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -38,6 +40,7 @@ export function toProductCore(p: Product): ProductCoreDto {
     productType: p.productType,
     status: p.status,
     tags: p.tags,
+    ownerUserId: p.ownerUserId ?? null,
     publishedAt: p.publishedAt ? p.publishedAt.toISOString() : null,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),

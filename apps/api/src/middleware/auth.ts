@@ -26,3 +26,25 @@ export const requireAuth: MiddlewareHandler<{ Variables: AuthVariables }> = asyn
   c.set('user', user);
   await next();
 };
+
+/**
+ * `requireAdmin` — zelfstandige variant (doet zelf de sessie-check) zodat hij
+ * ook centraal in de route-aggregator vóór een hele route-groep kan hangen.
+ * Multi-user: tenants (role 'user') krijgen 403 op admin-only modules
+ * (finance, channels, instellingen, …).
+ */
+export const requireAdmin: MiddlewareHandler<{ Variables: AuthVariables }> = async (c, next) => {
+  const token = getCookie(c, SESSION_COOKIE_NAME);
+  if (!token) {
+    return c.json({ error: 'unauthenticated' }, 401);
+  }
+  const user = await validateSessionToken(token);
+  if (!user) {
+    return c.json({ error: 'unauthenticated' }, 401);
+  }
+  if (user.role !== 'admin') {
+    return c.json({ error: 'forbidden', detail: 'admin_only' }, 403);
+  }
+  c.set('user', user);
+  await next();
+};
