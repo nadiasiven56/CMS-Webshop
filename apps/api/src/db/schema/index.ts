@@ -129,3 +129,8 @@ export * from './webhook-deliveries.js';
 
 // ─── Reviews (Kiyoh / Trustpilot / Google) ────────────────────
 export * from './reviews.js';
+
+// ════════════════════════════════════════════════════════════════
+// Multi-user (0013_multi_user) — shop-membership. Puur additief.
+// ════════════════════════════════════════════════════════════════
+export * from './shop-members.js';

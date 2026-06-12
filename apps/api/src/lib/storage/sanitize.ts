@@ -34,6 +34,11 @@ function extensionFor(originalName: string, mime?: string): string {
   }
 }
 
+/** Publieke mime→extensie mapping (zonder bestandsnaam-fallback). */
+export function extensionForMime(mime: string): string {
+  return extensionFor('', mime);
+}
+
 /**
  * Bouw een canonical storage-key voor een product-image.
  *   makeImageKey({ productId, originalName, uuid, mime })

@@ -1,4 +1,5 @@
 import { pgTable, uuid, text, timestamp } from 'drizzle-orm/pg-core';
+import { users } from './users.js';
 
 export const products = pgTable('products', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -13,6 +14,10 @@ export const products = pgTable('products', {
   // helper, en simpele text-CSV voldoet voor V1 admin-search.
   // Ingevuld door product-feature-agent.
   tags: text('tags').array().notNull().default([]),
+  // Multi-user: eigenaar van het product. NULL = platform/operator-catalogus
+  // (alle pre-multi-user producten). Users met role 'user' zien/beheren alleen
+  // hun eigen producten; admin ziet alles.
+  ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'set null' }),
   publishedAt: timestamp('published_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

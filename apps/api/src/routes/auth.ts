@@ -8,6 +8,7 @@ import {
   buildClearedSessionCookie,
   buildSessionCookie,
   createSession,
+  hashPassword,
   invalidateSession,
   SESSION_COOKIE_NAME,
   verifyPassword,
@@ -20,7 +21,50 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+const registerSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8, 'minimaal 8 tekens'),
+});
+
 export const authRoutes = new Hono<{ Variables: AuthVariables }>();
+
+/**
+ * POST /api/auth/register — multi-user: iedereen kan een account aanmaken.
+ *   body: { email, password (min 8) }
+ *   201: { user: { id, email, role: 'user' } }  + sessie-cookie (auto-login)
+ *   409: { error: 'email_taken' }
+ *
+ * Nieuwe accounts krijgen role 'user' (tenant): zien alleen eigen shops/
+ * producten. De operator blijft de enige 'admin'.
+ */
+authRoutes.post('/register', async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = registerSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
+  }
+
+  const email = parsed.data.email.toLowerCase().trim();
+  const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  if (existing) {
+    return c.json({ error: 'email_taken' }, 409);
+  }
+
+  const passwordHash = await hashPassword(parsed.data.password);
+  const [user] = await db
+    .insert(users)
+    .values({ email, passwordHash, role: 'user' })
+    .returning();
+  if (!user) {
+    return c.json({ error: 'internal_error' }, 500);
+  }
+
+  const session = await createSession(user.id);
+  c.header('Set-Cookie', buildSessionCookie(session.cookie, session.expiresAt));
+
+  logger.info({ userId: user.id }, 'register success');
+  return c.json({ user: session.user }, 201);
+});
 
 /**
  * POST /api/auth/login
